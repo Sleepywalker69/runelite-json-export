@@ -1,7 +1,6 @@
 package com.osrscompanion;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.osrscompanion.model.PlayerSyncData;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,12 +14,12 @@ import java.io.IOException;
 @Slf4j
 public class PlayerDataWriter
 {
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-
+	private final Gson gson;
 	private final File syncDir;
 
-	public PlayerDataWriter()
+	public PlayerDataWriter(Gson gson)
 	{
+		this.gson = gson.newBuilder().setPrettyPrinting().create();
 		this.syncDir = new File(System.getProperty("user.home"), ".runelite/osrs-companion");
 	}
 
@@ -46,7 +45,7 @@ public class PlayerDataWriter
 
 		String filename = data.player.username.toLowerCase().replaceAll("[^a-z0-9_-]", "_") + ".json";
 		File outputFile = new File(syncDir, filename);
-		String json = GSON.toJson(data);
+		String json = gson.toJson(data);
 
 		try (FileWriter writer = new FileWriter(outputFile))
 		{

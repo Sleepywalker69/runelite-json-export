@@ -1,5 +1,6 @@
 package com.osrscompanion;
 
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import com.osrscompanion.model.PlayerSyncData;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,9 @@ public class OsrsCompanionPlugin extends Plugin
 	@Inject
 	private ScheduledExecutorService executor;
 
+	@Inject
+	private Gson gson;
+
 	private PlayerDataCollector collector;
 	private PlayerDataWriter writer;
 	private boolean dirty = false;
@@ -41,7 +45,7 @@ public class OsrsCompanionPlugin extends Plugin
 	protected void startUp()
 	{
 		collector = new PlayerDataCollector(client);
-		writer = new PlayerDataWriter();
+		writer = new PlayerDataWriter(gson);
 		recalcSyncThreshold();
 		log.info("OSRS Companion started — saving to ~/.runelite/osrs-companion/");
 	}

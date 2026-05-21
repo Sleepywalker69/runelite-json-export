@@ -9,9 +9,40 @@ import net.runelite.client.config.ConfigSection;
 public interface OsrsCompanionConfig extends Config
 {
 	@ConfigSection(
-		name = "Storage",
-		description = "Local file storage settings",
+		name = "API Server",
+		description = "HTTP API server for live game data queries (IDA-style)",
 		position = 0
+	)
+	String apiSection = "api";
+
+	@ConfigItem(
+		keyName = "enableApiServer",
+		name = "Enable API Server",
+		description = "Start a local HTTP server that exposes live game data for MCP tools",
+		section = apiSection,
+		position = 0
+	)
+	default boolean enableApiServer()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "apiPort",
+		name = "API Port",
+		description = "Port for the local HTTP API server (requires restart)",
+		section = apiSection,
+		position = 1
+	)
+	default int apiPort()
+	{
+		return 8085;
+	}
+
+	@ConfigSection(
+		name = "File Export",
+		description = "Periodic JSON file export settings",
+		position = 1
 	)
 	String storageSection = "storage";
 
@@ -29,8 +60,8 @@ public interface OsrsCompanionConfig extends Config
 
 	@ConfigSection(
 		name = "Data",
-		description = "Choose what data to sync",
-		position = 1
+		description = "Choose what data to sync to file",
+		position = 2
 	)
 	String dataSection = "data";
 

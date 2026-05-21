@@ -6,6 +6,7 @@ import com.osrscompanion.model.PlayerSyncData;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.events.*;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -17,8 +18,8 @@ import java.util.concurrent.ScheduledExecutorService;
 @Slf4j
 @PluginDescriptor(
 	name = "OSRS MCP Companion",
-	description = "Saves player data locally as JSON for use with AI assistants via MCP",
-	tags = {"sync", "data", "export", "mcp", "ai"}
+	description = "Exposes live game data via a local HTTP API for use with AI assistants via MCP",
+	tags = {"sync", "data", "export", "mcp", "ai", "api"}
 )
 public class OsrsCompanionPlugin extends Plugin
 {
@@ -34,11 +35,15 @@ public class OsrsCompanionPlugin extends Plugin
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private ClientThread clientThread;
+
 	private PlayerDataCollector collector;
 	private PlayerDataWriter writer;
+	private GameStateServer apiServer;
 	private boolean dirty = false;
 	private int tickCounter = 0;
-	private int syncTickThreshold = 100; // recalculated from config
+	private int syncTickThreshold = 100;
 	private boolean initialCollectionDone = false;
 
 	@Override
@@ -47,20 +52,51 @@ public class OsrsCompanionPlugin extends Plugin
 		collector = new PlayerDataCollector(client);
 		writer = new PlayerDataWriter(gson);
 		recalcSyncThreshold();
+
+		if (config.enableApiServer())
+		{
+			startApiServer();
+		}
+
 		log.info("OSRS Companion started — saving to ~/.runelite/osrs-companion/");
 	}
 
 	@Override
 	protected void shutDown()
 	{
-		// Final save on shutdown
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
 			doSave();
 		}
+
+		stopApiServer();
+
 		collector = null;
 		writer = null;
 		log.info("OSRS Companion stopped");
+	}
+
+	private void startApiServer()
+	{
+		try
+		{
+			apiServer = new GameStateServer(client, clientThread, gson);
+			apiServer.start(config.apiPort());
+		}
+		catch (Exception e)
+		{
+			log.warn("OSRS Companion: Failed to start API server on port {}", config.apiPort(), e);
+			apiServer = null;
+		}
+	}
+
+	private void stopApiServer()
+	{
+		if (apiServer != null)
+		{
+			apiServer.stop();
+			apiServer = null;
+		}
 	}
 
 	@Provides
@@ -74,13 +110,11 @@ public class OsrsCompanionPlugin extends Plugin
 	{
 		if (event.getGameState() == GameState.LOGGED_IN)
 		{
-			// Delay initial collection to let the client populate data
 			tickCounter = -10;
 			initialCollectionDone = false;
 		}
 		else if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
-			// Save before logout
 			doSave();
 			initialCollectionDone = false;
 		}
@@ -126,8 +160,20 @@ public class OsrsCompanionPlugin extends Plugin
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
-		// Mark dirty so diaries/CAs get picked up on next poll
 		dirty = true;
+	}
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (apiServer != null)
+		{
+			apiServer.addChatMessage(
+				event.getType().name(),
+				event.getName(),
+				event.getMessage()
+			);
+		}
 	}
 
 	@Subscribe
@@ -140,18 +186,15 @@ public class OsrsCompanionPlugin extends Plugin
 
 		tickCounter++;
 
-		// Initial full collection after login (after a short delay)
 		if (!initialCollectionDone && tickCounter >= 0)
 		{
 			doFullCollection();
 			initialCollectionDone = true;
 			dirty = true;
-			// Save immediately after initial collection
 			doSave();
 			return;
 		}
 
-		// Periodic polling every ~30 ticks (~18 seconds)
 		if (tickCounter % 30 == 0)
 		{
 			if (config.syncQuests())
@@ -168,7 +211,6 @@ public class OsrsCompanionPlugin extends Plugin
 			}
 		}
 
-		// Save at configured interval
 		if (dirty && tickCounter >= syncTickThreshold)
 		{
 			tickCounter = 0;
@@ -176,9 +218,6 @@ public class OsrsCompanionPlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Perform a full collection of all data sources.
-	 */
 	private void doFullCollection()
 	{
 		if (config.syncSkills())
@@ -229,9 +268,6 @@ public class OsrsCompanionPlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Build snapshot and save to local file in background.
-	 */
 	private void doSave()
 	{
 		if (collector == null || writer == null || !dirty)
@@ -260,10 +296,6 @@ public class OsrsCompanionPlugin extends Plugin
 		});
 	}
 
-	/**
-	 * Recalculate the game tick threshold for sync interval.
-	 * 1 game tick ≈ 0.6 seconds.
-	 */
 	private void recalcSyncThreshold()
 	{
 		int seconds = Math.max(30, config.syncIntervalSeconds());

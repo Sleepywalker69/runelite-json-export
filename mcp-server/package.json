@@ -1,0 +1,26 @@
+{
+  "name": "osrs-companion",
+  "version": "2.0.0",
+  "description": "MCP server for Old School RuneScape — live game data via RuneLite plugin API + wiki + price lookups",
+  "type": "module",
+  "bin": {
+    "osrs-companion": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^22.15.17"
+  },
+  "keywords": ["osrs", "runescape", "mcp", "runelite", "ai", "companion"],
+  "license": "MIT",
+  "files": ["dist"]
+}

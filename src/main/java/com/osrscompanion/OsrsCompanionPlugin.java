@@ -18,6 +18,7 @@ import net.runelite.client.plugins.PluginManager;
 
 import javax.inject.Inject;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,6 +62,10 @@ public class OsrsCompanionPlugin extends Plugin
 	private int tickCounter = 0;
 	private int syncTickThreshold = 100;
 	private boolean initialCollectionDone = false;
+
+	// Var change tracking
+	private int[] oldVarps = null;
+	private Map<Integer, List<Integer>> varpToVarbits = null; // varp index -> list of varbit IDs
 
 	@Override
 	protected void startUp()
@@ -128,11 +133,15 @@ public class OsrsCompanionPlugin extends Plugin
 		{
 			tickCounter = -10;
 			initialCollectionDone = false;
+			// Initialize var tracking — snapshot current varps for change detection
+			oldVarps = null; // Will be initialized on first VarbitChanged event
 		}
 		else if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			doSave();
 			initialCollectionDone = false;
+			oldVarps = null;
+			varpToVarbits = null;
 			if (apiServer != null)
 			{
 				apiServer.clearNameCaches();
@@ -215,6 +224,98 @@ public class OsrsCompanionPlugin extends Plugin
 	public void onVarbitChanged(VarbitChanged event)
 	{
 		dirty = true;
+
+		if (apiServer == null || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+
+		int[] currentVarps = client.getVarps();
+		if (oldVarps == null)
+		{
+			oldVarps = new int[currentVarps.length];
+			System.arraycopy(currentVarps, 0, oldVarps, 0, currentVarps.length);
+			return;
+		}
+
+		int varpIndex = event.getIndex();
+		if (varpIndex < 0 || varpIndex >= oldVarps.length)
+		{
+			return;
+		}
+
+		int oldVal = oldVarps[varpIndex];
+		int newVal = currentVarps[varpIndex];
+
+		if (oldVal != newVal)
+		{
+			// Build varp->varbit index lazily (once per login session)
+			if (varpToVarbits == null)
+			{
+				buildVarpToVarbitIndex();
+			}
+
+			// Check affected varbits first (more useful than raw varp changes)
+			boolean anyVarbitChanged = false;
+			if (varpToVarbits != null)
+			{
+				List<Integer> affectedVarbits = varpToVarbits.get(varpIndex);
+				if (affectedVarbits != null)
+				{
+					for (int varbitId : affectedVarbits)
+					{
+						try
+						{
+							int oldVarbitVal = client.getVarbitValue(oldVarps, varbitId);
+							int newVarbitVal = client.getVarbitValue(currentVarps, varbitId);
+							if (oldVarbitVal != newVarbitVal)
+							{
+								anyVarbitChanged = true;
+								Map<String, Object> vbEntry = new LinkedHashMap<>();
+								vbEntry.put("tick", client.getTickCount());
+								vbEntry.put("timestamp", System.currentTimeMillis());
+								vbEntry.put("type", "varbit");
+								vbEntry.put("id", varbitId);
+								vbEntry.put("varpIndex", varpIndex);
+								vbEntry.put("oldValue", oldVarbitVal);
+								vbEntry.put("newValue", newVarbitVal);
+								apiServer.addVarChange(vbEntry);
+							}
+						}
+						catch (Exception ignored)
+						{
+						}
+					}
+				}
+			}
+
+			// Also record varp-level change if no varbit was found (or as fallback)
+			if (!anyVarbitChanged)
+			{
+				Map<String, Object> entry = new LinkedHashMap<>();
+				entry.put("tick", client.getTickCount());
+				entry.put("timestamp", System.currentTimeMillis());
+				entry.put("type", "varp");
+				entry.put("id", varpIndex);
+				entry.put("oldValue", oldVal);
+				entry.put("newValue", newVal);
+				apiServer.addVarChange(entry);
+			}
+
+			// Broadcast SSE event
+			if (apiServer.hasSseClients())
+			{
+				Map<String, Object> sseData = new LinkedHashMap<>();
+				sseData.put("tick", client.getTickCount());
+				sseData.put("timestamp", System.currentTimeMillis());
+				sseData.put("varpIndex", varpIndex);
+				sseData.put("oldValue", oldVal);
+				sseData.put("newValue", newVal);
+				apiServer.broadcastEvent("var_changed", sseData);
+			}
+
+			System.arraycopy(currentVarps, 0, oldVarps, 0, oldVarps.length);
+		}
 	}
 
 	@Subscribe
@@ -407,7 +508,7 @@ public class OsrsCompanionPlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		if (apiServer == null || !apiServer.hasSseClients())
+		if (apiServer == null)
 		{
 			return;
 		}
@@ -506,7 +607,67 @@ public class OsrsCompanionPlugin extends Plugin
 			}
 		}
 
-		apiServer.broadcastEvent("menu_clicked", data);
+		// Always log to interaction history (not gated by SSE clients)
+		Map<String, Object> interaction = new LinkedHashMap<>();
+		interaction.put("tick", client.getTickCount());
+		interaction.put("timestamp", System.currentTimeMillis());
+		interaction.put("type", "click");
+		interaction.put("action", event.getMenuOption());
+		interaction.put("target", cleanedTarget);
+		interaction.put("id", event.getId());
+		interaction.put("menuAction", event.getMenuAction().name());
+		apiServer.addInteraction(interaction);
+
+		// Broadcast SSE only if there are active SSE clients
+		if (apiServer.hasSseClients())
+		{
+			apiServer.broadcastEvent("menu_clicked", data);
+		}
+	}
+
+	@Subscribe
+	public void onClientTick(ClientTick event)
+	{
+		if (apiServer == null || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+
+		// Read the top menu entry to detect what the user is hovering over
+		MenuEntry[] menuEntries = client.getMenuEntries();
+		if (menuEntries == null || menuEntries.length == 0)
+		{
+			return;
+		}
+
+		// Top entry is the last element in the array
+		MenuEntry top = menuEntries[menuEntries.length - 1];
+		String option = top.getOption();
+		String target = top.getTarget();
+		if (target == null)
+		{
+			target = "";
+		}
+		String cleanedTarget = target.replaceAll("<[^>]+>", "").trim();
+
+		// Build a unique key from option + target to detect changes
+		String hoverKey = option + "|" + cleanedTarget;
+
+		// Skip walk/cancel/default entries — they're noise
+		if ("Walk here".equals(option) || "Cancel".equals(option))
+		{
+			return;
+		}
+
+		// Only log when hover target actually changes
+		Map<String, Object> hoverEntry = new LinkedHashMap<>();
+		hoverEntry.put("tick", client.getTickCount());
+		hoverEntry.put("timestamp", System.currentTimeMillis());
+		hoverEntry.put("type", "hover");
+		hoverEntry.put("action", option);
+		hoverEntry.put("target", cleanedTarget);
+		hoverEntry.put("id", top.getIdentifier());
+		apiServer.addHoverIfChanged(hoverKey, hoverEntry);
 	}
 
 	@Subscribe
@@ -584,6 +745,34 @@ public class OsrsCompanionPlugin extends Plugin
 		data.put("range", event.getRange());
 		data.put("source", "AREA");
 		apiServer.broadcastEvent("sound_effect", data);
+	}
+
+	private void buildVarpToVarbitIndex()
+	{
+		try
+		{
+			IndexDataBase indexConfig = client.getIndexConfig();
+			final int[] varbitIds = indexConfig.getFileIds(14); // VARBITS_ARCHIVE_ID = 14
+			if (varbitIds == null)
+			{
+				return;
+			}
+
+			Map<Integer, List<Integer>> map = new HashMap<>();
+			for (int varbitId : varbitIds)
+			{
+				VarbitComposition varbit = client.getVarbit(varbitId);
+				if (varbit != null)
+				{
+					map.computeIfAbsent(varbit.getIndex(), k -> new ArrayList<>()).add(varbitId);
+				}
+			}
+			varpToVarbits = map;
+		}
+		catch (Exception e)
+		{
+			log.debug("Failed to build varp->varbit index", e);
+		}
 	}
 
 	private void doFullCollection()

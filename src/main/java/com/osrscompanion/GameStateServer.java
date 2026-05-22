@@ -70,6 +70,12 @@ public class GameStateServer
 
 	private final Set<Integer> previousInterfaces = new HashSet<>();
 
+	private final List<Map<String, Object>> varHistory = Collections.synchronizedList(new ArrayList<>());
+	private static final int MAX_VAR_HISTORY = 200;
+	private final List<Map<String, Object>> interactionHistory = Collections.synchronizedList(new ArrayList<>());
+	private static final int MAX_INTERACTION_HISTORY = 200;
+	private String lastHoverTarget = "";
+
 	private static final Map<Integer, String> KNOWN_INTERFACES;
 	static
 	{
@@ -158,6 +164,9 @@ public class GameStateServer
 		server.createContext("/api/struct-def", this::handleStructDef);
 		server.createContext("/api/enum-def", this::handleEnumDef);
 		server.createContext("/api/player-appearance", this::handlePlayerAppearance);
+		server.createContext("/api/var-history", this::handleVarHistory);
+		server.createContext("/api/interaction-history", this::handleInteractionHistory);
+		server.createContext("/api/graphics-objects", this::handleGraphicsObjects);
 		server.createContext("/", this::handleIndex);
 
 		serverExecutor = Executors.newCachedThreadPool(r ->
@@ -1036,7 +1045,7 @@ public class GameStateServer
 	{
 		Map<String, Object> index = new LinkedHashMap<>();
 		index.put("name", "OSRS MCP Companion API");
-		index.put("version", 3);
+		index.put("version", 4);
 
 		List<Map<String, String>> endpoints = new ArrayList<>();
 		endpoints.add(ep("GET /api/game-state", "Login state, game tick count"));
@@ -1078,6 +1087,9 @@ public class GameStateServer
 		endpoints.add(ep("GET /api/struct-def?id=X", "Struct definition: all param key-value pairs"));
 		endpoints.add(ep("GET /api/enum-def?id=X", "Enum definition: keys and int/string/long value arrays"));
 		endpoints.add(ep("GET /api/player-appearance", "Player appearance: equipment, kit, colors, gender. Optional: ?name=X"));
+		endpoints.add(ep("GET /api/var-history", "Recent var changes (last 200). ?type=varbit|varp to filter, ?last=N for recent"));
+		endpoints.add(ep("GET /api/interaction-history", "Recent clicks and hovers (last 200). ?last=N for recent"));
+		endpoints.add(ep("GET /api/graphics-objects", "Active graphics objects (spell effects, visual FX)"));
 		index.put("endpoints", endpoints);
 
 		sendJson(exchange, 200, index);
@@ -1546,6 +1558,7 @@ public class GameStateServer
 					entry.put("combatLevel", npc.getCombatLevel());
 					entry.put("position", worldPoint(npc.getWorldLocation()));
 					entry.put("animation", npc.getAnimation());
+					entry.put("poseAnimation", npc.getPoseAnimation());
 					entry.put("graphic", npc.getGraphic());
 					entry.put("orientation", npc.getOrientation());
 					entry.put("healthRatio", npc.getHealthRatio());
@@ -1617,6 +1630,7 @@ public class GameStateServer
 					entry.put("combatLevel", player.getCombatLevel());
 					entry.put("position", worldPoint(player.getWorldLocation()));
 					entry.put("animation", player.getAnimation());
+					entry.put("poseAnimation", player.getPoseAnimation());
 					entry.put("graphic", player.getGraphic());
 					entry.put("orientation", player.getOrientation());
 					entry.put("healthRatio", player.getHealthRatio());
@@ -2756,6 +2770,140 @@ public class GameStateServer
 				}
 
 				return m;
+			});
+			sendJson(exchange, 200, data);
+		}
+		catch (Exception e)
+		{
+			sendError(exchange, 500, e.getMessage());
+		}
+	}
+
+	// --- Var / Interaction history ---
+
+	public void addVarChange(Map<String, Object> entry)
+	{
+		synchronized (varHistory)
+		{
+			varHistory.add(entry);
+			while (varHistory.size() > MAX_VAR_HISTORY)
+			{
+				varHistory.remove(0);
+			}
+		}
+	}
+
+	public void addInteraction(Map<String, Object> entry)
+	{
+		synchronized (interactionHistory)
+		{
+			interactionHistory.add(entry);
+			while (interactionHistory.size() > MAX_INTERACTION_HISTORY)
+			{
+				interactionHistory.remove(0);
+			}
+		}
+	}
+
+	public void addHoverIfChanged(String target, Map<String, Object> entry)
+	{
+		if (target.equals(lastHoverTarget))
+		{
+			return;
+		}
+		lastHoverTarget = target;
+		addInteraction(entry);
+	}
+
+	private void handleVarHistory(HttpExchange exchange) throws IOException
+	{
+		Map<String, String> params = parseQuery(exchange.getRequestURI());
+		String typeFilter = params.get("type");
+		int last = intParam(params, "last", 0);
+
+		List<Map<String, Object>> result;
+		synchronized (varHistory)
+		{
+			result = new ArrayList<>(varHistory);
+		}
+
+		if (typeFilter != null && !typeFilter.isEmpty())
+		{
+			result.removeIf(e -> !typeFilter.equalsIgnoreCase((String) e.get("type")));
+		}
+		if (last > 0 && result.size() > last)
+		{
+			result = result.subList(result.size() - last, result.size());
+		}
+
+		Map<String, Object> response = new LinkedHashMap<>();
+		response.put("count", result.size());
+		response.put("changes", result);
+		sendJson(exchange, 200, response);
+	}
+
+	private void handleInteractionHistory(HttpExchange exchange) throws IOException
+	{
+		Map<String, String> params = parseQuery(exchange.getRequestURI());
+		int last = intParam(params, "last", 0);
+
+		List<Map<String, Object>> result;
+		synchronized (interactionHistory)
+		{
+			result = new ArrayList<>(interactionHistory);
+		}
+
+		if (last > 0 && result.size() > last)
+		{
+			result = result.subList(result.size() - last, result.size());
+		}
+
+		Map<String, Object> response = new LinkedHashMap<>();
+		response.put("count", result.size());
+		response.put("interactions", result);
+		sendJson(exchange, 200, response);
+	}
+
+	private void handleGraphicsObjects(HttpExchange exchange) throws IOException
+	{
+		if (!requireLoggedIn(exchange))
+		{
+			return;
+		}
+
+		try
+		{
+			Object data = onClientThread(() ->
+			{
+				List<Map<String, Object>> objects = new ArrayList<>();
+				for (GraphicsObject go : client.getTopLevelWorldView().getGraphicsObjects())
+				{
+					Map<String, Object> m = new LinkedHashMap<>();
+					m.put("id", go.getId());
+					m.put("startCycle", go.getStartCycle());
+					m.put("finished", go.finished());
+
+					LocalPoint lp = go.getLocation();
+					if (lp != null)
+					{
+						Map<String, Object> loc = new LinkedHashMap<>();
+						loc.put("localX", lp.getX());
+						loc.put("localY", lp.getY());
+
+						int baseX = client.getBaseX();
+						int baseY = client.getBaseY();
+						loc.put("worldX", baseX + (lp.getSceneX()));
+						loc.put("worldY", baseY + (lp.getSceneY()));
+						m.put("location", loc);
+					}
+
+					objects.add(m);
+				}
+
+				Map<String, Object> result = new LinkedHashMap<>();
+				result.put("count", objects.size());
+				result.put("graphicsObjects", objects);
+				return result;
 			});
 			sendJson(exchange, 200, data);
 		}

@@ -71,10 +71,18 @@ The MCP server provides tools across six categories:
 | Tool | What it does |
 |------|-------------|
 | `debug_snapshot` | **Instant** full combat state snapshot — player, NPCs, prayers, inventory, equipment, recent interactions, effects. One call does it all |
-| `start_recording` | Start recording all game events for a duration (default 3 min, max 10 min) |
+| `start_recording` | Start recording game events for a duration (default 3 min, max 10 min). Filter by event type to keep the buffer focused |
 | `stop_recording` | Stop an active recording early |
-| `recording_status` | Check recording progress — events captured, time remaining |
+| `recording_status` | Check recording progress — events captured, time remaining, active filter |
 | `get_recording` | Retrieve recorded timeline with filtering by event type and tick range |
+
+**16 recordable event types:** `game_tick`, `hitsplat`, `animation_changed`, `npc_spawned`, `npc_despawned`, `actor_death`, `var_changed`, `menu_clicked`, `stat_changed`, `item_changed`, `interacting_changed`, `object_spawned`, `object_despawned`, `projectile_spawned`, `gfx_created`, `chat_message`
+
+**Recording presets** (pass to `start_recording` types parameter):
+- **Combat (full):** `game_tick,hitsplat,npc_spawned,npc_despawned,actor_death,menu_clicked,object_spawned,object_despawned,projectile_spawned,gfx_created`
+- **Combat (lite):** `game_tick,hitsplat,actor_death,menu_clicked,projectile_spawned`
+- **Vars only:** `var_changed,game_tick`
+- **Clicks/movement:** `menu_clicked,game_tick`
 
 ### Wiki & Prices (3 tools)
 | Tool | What it does |

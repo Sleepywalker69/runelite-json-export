@@ -83,6 +83,7 @@ public class GameStateServer
 	private final List<Map<String, Object>> recordingBuffer = Collections.synchronizedList(new ArrayList<>());
 	private static final int MAX_RECORDING_ENTRIES = 10_000;
 	private int recordingTickCounter = 0; // for throttling game_tick recordings
+	private Set<String> recordingEventFilter = null; // null = record all types
 
 	private static final Map<Integer, String> KNOWN_INTERFACES;
 	static
@@ -1104,7 +1105,7 @@ public class GameStateServer
 		endpoints.add(ep("GET /api/interaction-history", "Recent clicks and hovers (last 200). ?last=N for recent"));
 		endpoints.add(ep("GET /api/graphics-objects", "Active graphics objects (spell effects, visual FX)"));
 		endpoints.add(ep("GET /api/prayers", "Currently active prayers and prayer points"));
-		endpoints.add(ep("POST /api/recording/start?duration=N", "Start recording game events for N seconds (default 180, max 600)"));
+		endpoints.add(ep("POST /api/recording/start?duration=N&types=X,Y", "Start recording game events. duration=seconds (default 180, max 600). types=comma-separated filter (default: all)"));
 		endpoints.add(ep("POST /api/recording/stop", "Stop recording, keep buffered events"));
 		endpoints.add(ep("GET /api/recording/status", "Recording state: active, ticks elapsed, events logged"));
 		endpoints.add(ep("GET /api/recording/data", "Get recorded events. ?types=game_tick,hitsplat &from_tick=X &to_tick=Y &last=N"));
@@ -2980,6 +2981,10 @@ public class GameStateServer
 		{
 			return;
 		}
+		if (recordingEventFilter != null && !recordingEventFilter.contains(eventType))
+		{
+			return;
+		}
 		if (recordingBuffer.size() >= MAX_RECORDING_ENTRIES)
 		{
 			isRecording = false;
@@ -3015,6 +3020,17 @@ public class GameStateServer
 
 			int startTick = onClientThread(() -> client.getTickCount());
 
+			// Parse optional event type filter
+			String typesParam = params.get("types");
+			if (typesParam != null && !typesParam.isEmpty())
+			{
+				recordingEventFilter = new HashSet<>(Arrays.asList(typesParam.split(",")));
+			}
+			else
+			{
+				recordingEventFilter = null; // record everything
+			}
+
 			synchronized (recordingBuffer)
 			{
 				recordingBuffer.clear();
@@ -3029,9 +3045,11 @@ public class GameStateServer
 			result.put("durationSeconds", durationSeconds);
 			result.put("maxTicks", maxTicks);
 			result.put("startTick", startTick);
+			result.put("eventFilter", recordingEventFilter != null ? recordingEventFilter : "all");
 			sendJson(exchange, 200, result);
 
-			log.info("Recording started: {} seconds ({} ticks)", durationSeconds, maxTicks);
+			log.info("Recording started: {} seconds ({} ticks), filter: {}", durationSeconds, maxTicks,
+				recordingEventFilter != null ? recordingEventFilter : "all");
 		}
 		catch (Exception e)
 		{
@@ -3063,6 +3081,7 @@ public class GameStateServer
 		result.put("eventsLogged", recordingBuffer.size());
 		result.put("maxEntries", MAX_RECORDING_ENTRIES);
 		result.put("maxTicks", recordingMaxTicks);
+		result.put("eventFilter", recordingEventFilter != null ? recordingEventFilter : "all");
 
 		if (isRecording)
 		{

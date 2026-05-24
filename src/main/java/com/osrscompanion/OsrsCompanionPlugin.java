@@ -647,6 +647,18 @@ public class OsrsCompanionPlugin extends Plugin
 			}
 		}
 
+		// Add world coordinates for walk/movement clicks
+		if ("WALK".equals(actionName))
+		{
+			int sceneX = event.getParam0();
+			int sceneY = event.getParam1();
+			Map<String, Object> clickedTile = new LinkedHashMap<>();
+			clickedTile.put("x", client.getBaseX() + sceneX);
+			clickedTile.put("y", client.getBaseY() + sceneY);
+			clickedTile.put("plane", client.getPlane());
+			data.put("clickedTile", clickedTile);
+		}
+
 		// Always log to interaction history (not gated by SSE clients)
 		Map<String, Object> interaction = new LinkedHashMap<>();
 		interaction.put("tick", client.getTickCount());

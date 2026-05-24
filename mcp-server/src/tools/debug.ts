@@ -5,7 +5,7 @@ import { apiGet, apiPost, isApiError } from "../api.js";
 export function registerDebugTools(server: McpServer) {
   server.tool(
     "start_recording",
-    "Start recording game events for later analysis. Use this when the user says 'record the next X minutes', 'watch what happens', 'capture what's going on', or wants to debug a script over time. Records all game events (ticks, combat, NPC activity, clicks, var changes) into a buffer that can be reviewed later.",
+    "Start recording game events for later analysis. Use this when the user says 'record the next X minutes', 'watch what happens', 'capture what's going on', or wants to debug a script over time. Records game events into a buffer that can be reviewed later.\n\nUse the 'types' parameter to filter which events are captured — this prevents the 10,000-entry buffer from filling up with noise.\n\nCommon presets:\n- Combat: game_tick,hitsplat,npc_spawned,npc_despawned,actor_death,menu_clicked\n- Vars only: var_changed,game_tick\n- Clicks/movement: menu_clicked,game_tick\n- Full (default): omit types to record everything",
     {
       duration: z
         .number()
@@ -13,17 +13,30 @@ export function registerDebugTools(server: McpServer) {
         .max(600)
         .default(180)
         .describe("Recording duration in seconds (default 180, max 600)"),
+      types: z
+        .string()
+        .optional()
+        .describe(
+          "Comma-separated event types to record. Only these types will be captured. " +
+          "Available: game_tick, hitsplat, animation_changed, npc_spawned, npc_despawned, " +
+          "actor_death, var_changed, menu_clicked, stat_changed, item_changed, interacting_changed. " +
+          "Omit to record all types."
+        ),
     },
-    async ({ duration }) => {
+    async ({ duration, types }) => {
       try {
-        const data = await apiPost(`/api/recording/start?duration=${duration}`);
+        let url = `/api/recording/start?duration=${duration}`;
+        if (types) url += `&types=${encodeURIComponent(types)}`;
+        const data = await apiPost(url);
+        const filter = data.eventFilter;
+        const filterDisplay = filter === "all"
+          ? "All event types"
+          : Array.isArray(filter) ? filter.join(", ") : String(filter);
         const lines = [
           "# Recording Started",
           `Duration: ${duration} seconds (~${Math.ceil(duration / 0.6)} game ticks)`,
           `Start tick: ${data.startTick}`,
-          "",
-          "Recording game ticks (every 3rd tick), hitsplats, animation changes, NPC spawns/deaths,",
-          "var changes, menu clicks, stat changes, and item container changes.",
+          `Event filter: ${filterDisplay}`,
           "",
           "Use **stop_recording** to stop early, or it will auto-stop after the duration.",
           "Use **get_recording** to retrieve and analyze the captured events.",
@@ -80,12 +93,17 @@ export function registerDebugTools(server: McpServer) {
             ],
           };
         }
+        const filter = data.eventFilter;
+        const filterDisplay = filter === "all"
+          ? "All event types"
+          : Array.isArray(filter) ? filter.join(", ") : String(filter);
         const lines = [
           "# Recording In Progress",
           `Events captured: ${data.eventsLogged}`,
           `Ticks elapsed: ${data.ticksElapsed}`,
           `Time elapsed: ~${data.secondsElapsed}s`,
           `Time remaining: ~${data.secondsRemaining}s`,
+          `Event filter: ${filterDisplay}`,
         ];
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {

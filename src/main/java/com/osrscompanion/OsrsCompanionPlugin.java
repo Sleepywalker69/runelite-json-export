@@ -16,6 +16,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.ui.DrawManager;
 
 import javax.inject.Inject;
 import java.util.ArrayList;
@@ -26,6 +27,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
+
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import org.slf4j.LoggerFactory;
 
 @Slf4j
 @PluginDescriptor(
@@ -56,9 +61,15 @@ public class OsrsCompanionPlugin extends Plugin
 	@Inject
 	private ConfigManager configManager;
 
+	@Inject
+	private DrawManager drawManager;
+
 	private PlayerDataCollector collector;
 	private PlayerDataWriter writer;
 	private GameStateServer apiServer;
+	private TickStateBuffer tickBuffer;
+	private LogCaptureAppender logCaptureAppender;
+	private ActionTracker actionTracker;
 	private boolean dirty = false;
 	private int tickCounter = 0;
 	private int syncTickThreshold = 100;
@@ -73,7 +84,25 @@ public class OsrsCompanionPlugin extends Plugin
 	{
 		collector = new PlayerDataCollector(client);
 		writer = new PlayerDataWriter(gson);
+		tickBuffer = new TickStateBuffer(600); // ~10 min at 600ms/tick
+		actionTracker = new ActionTracker(500);
 		recalcSyncThreshold();
+
+		// Attach log capture appender to Logback root logger
+		try
+		{
+			logCaptureAppender = new LogCaptureAppender();
+			LoggerContext ctx = (LoggerContext) LoggerFactory.getILoggerFactory();
+			Logger rootLogger = ctx.getLogger(Logger.ROOT_LOGGER_NAME);
+			logCaptureAppender.setContext(ctx);
+			logCaptureAppender.start();
+			rootLogger.addAppender(logCaptureAppender);
+		}
+		catch (Exception e)
+		{
+			log.warn("Failed to attach log capture appender", e);
+			logCaptureAppender = null;
+		}
 
 		if (config.enableApiServer())
 		{
@@ -91,6 +120,20 @@ public class OsrsCompanionPlugin extends Plugin
 			doSave();
 		}
 
+		// Detach log capture appender
+		if (logCaptureAppender != null)
+		{
+			try
+			{
+				LoggerContext ctx = (LoggerContext) LoggerFactory.getILoggerFactory();
+				Logger rootLogger = ctx.getLogger(Logger.ROOT_LOGGER_NAME);
+				rootLogger.detachAppender(logCaptureAppender);
+				logCaptureAppender.stop();
+			}
+			catch (Exception ignored) {}
+			logCaptureAppender = null;
+		}
+
 		stopApiServer();
 
 		collector = null;
@@ -102,7 +145,7 @@ public class OsrsCompanionPlugin extends Plugin
 	{
 		try
 		{
-			apiServer = new GameStateServer(client, clientThread, gson, pluginManager, configManager);
+			apiServer = new GameStateServer(client, clientThread, gson, pluginManager, configManager, drawManager, tickBuffer, logCaptureAppender, actionTracker);
 			apiServer.start(config.apiPort());
 		}
 		catch (Exception e)
@@ -432,18 +475,223 @@ public class OsrsCompanionPlugin extends Plugin
 			}
 			apiServer.updateActiveInterfaces(activeInterfaces);
 		}
+
+		// Capture tick snapshot for the state buffer
+		if (tickBuffer != null && initialCollectionDone)
+		{
+			captureTickSnapshot();
+		}
+
+		// Check for state changes without menu clicks (action inference)
+		if (actionTracker != null && initialCollectionDone)
+		{
+			Player local = client.getLocalPlayer();
+			int posX = 0, posY = 0, plane = 0;
+			if (local != null)
+			{
+				WorldPoint wp = local.getWorldLocation();
+				if (wp != null)
+				{
+					posX = wp.getX();
+					posY = wp.getY();
+					plane = wp.getPlane();
+				}
+			}
+
+			int[] invIds = null;
+			int[] invQtys = null;
+			ItemContainer inv = client.getItemContainer(InventoryID.INVENTORY);
+			if (inv != null)
+			{
+				Item[] items = inv.getItems();
+				invIds = new int[items.length];
+				invQtys = new int[items.length];
+				for (int i = 0; i < items.length; i++)
+				{
+					invIds[i] = items[i].getId();
+					invQtys[i] = items[i].getQuantity();
+				}
+			}
+
+			int[] equipIds = null;
+			ItemContainer equip = client.getItemContainer(InventoryID.EQUIPMENT);
+			if (equip != null)
+			{
+				Item[] items = equip.getItems();
+				equipIds = new int[items.length];
+				for (int i = 0; i < items.length; i++)
+				{
+					equipIds[i] = items[i].getId();
+				}
+			}
+
+			actionTracker.checkStateChanges(
+				client.getTickCount(),
+				invIds, invQtys, equipIds,
+				posX, posY, plane
+			);
+		}
+	}
+
+	private void captureTickSnapshot()
+	{
+		int tick = client.getTickCount();
+		long timestamp = System.currentTimeMillis();
+
+		Player local = client.getLocalPlayer();
+
+		// Player state
+		Map<String, Object> playerState = null;
+		WorldPoint playerPos = null;
+		if (local != null)
+		{
+			playerState = new LinkedHashMap<>();
+			playerPos = local.getWorldLocation();
+			if (playerPos != null)
+			{
+				Map<String, Object> pos = new LinkedHashMap<>();
+				pos.put("x", playerPos.getX());
+				pos.put("y", playerPos.getY());
+				pos.put("plane", playerPos.getPlane());
+				playerState.put("position", pos);
+			}
+			playerState.put("animation", local.getAnimation());
+			playerState.put("health", client.getBoostedSkillLevel(Skill.HITPOINTS));
+			playerState.put("maxHealth", client.getRealSkillLevel(Skill.HITPOINTS));
+			playerState.put("prayer", client.getBoostedSkillLevel(Skill.PRAYER));
+			playerState.put("maxPrayer", client.getRealSkillLevel(Skill.PRAYER));
+			playerState.put("runEnergy", client.getEnergy() / 100.0);
+			playerState.put("specialAttack", client.getVarpValue(48) / 10.0);
+
+			Actor interacting = local.getInteracting();
+			if (interacting != null)
+			{
+				playerState.put("interacting", interacting.getName());
+			}
+		}
+
+		// NPCs (within 15 tiles)
+		List<Map<String, Object>> npcs = new ArrayList<>();
+		if (local != null && playerPos != null)
+		{
+			for (NPC npc : client.getNpcs())
+			{
+				if (npc == null || npc.getName() == null) continue;
+				WorldPoint npcPos = npc.getWorldLocation();
+				if (npcPos == null) continue;
+				if (playerPos.distanceTo(npcPos) > 15) continue;
+
+				Map<String, Object> n = new LinkedHashMap<>();
+				n.put("index", npc.getIndex());
+				n.put("id", npc.getId());
+				n.put("name", npc.getName());
+				n.put("x", npcPos.getX());
+				n.put("y", npcPos.getY());
+				n.put("anim", npc.getAnimation());
+				int ratio = npc.getHealthRatio();
+				int scale = npc.getHealthScale();
+				if (ratio >= 0 && scale > 0)
+				{
+					n.put("hpRatio", ratio);
+					n.put("hpScale", scale);
+				}
+				Actor target = npc.getInteracting();
+				if (target != null)
+				{
+					n.put("interacting", target.getName());
+				}
+				npcs.add(n);
+			}
+		}
+
+		// Other players (within 15 tiles)
+		List<Map<String, Object>> otherPlayers = new ArrayList<>();
+		if (local != null && playerPos != null)
+		{
+			for (Player p : client.getPlayers())
+			{
+				if (p == null || p == local || p.getName() == null) continue;
+				WorldPoint pPos = p.getWorldLocation();
+				if (pPos == null) continue;
+				if (playerPos.distanceTo(pPos) > 15) continue;
+
+				Map<String, Object> pl = new LinkedHashMap<>();
+				pl.put("name", p.getName());
+				pl.put("x", pPos.getX());
+				pl.put("y", pPos.getY());
+				pl.put("anim", p.getAnimation());
+				pl.put("combatLevel", p.getCombatLevel());
+				Actor target = p.getInteracting();
+				if (target != null)
+				{
+					pl.put("interacting", target.getName());
+				}
+				otherPlayers.add(pl);
+			}
+		}
+
+		// Skills
+		Skill[] skills = Skill.values();
+		int[] skillXp = new int[skills.length];
+		int[] skillRealLevel = new int[skills.length];
+		int[] skillBoostedLevel = new int[skills.length];
+		for (Skill skill : skills)
+		{
+			if (skill == Skill.OVERALL) continue;
+			int ord = skill.ordinal();
+			skillXp[ord] = client.getSkillExperience(skill);
+			skillRealLevel[ord] = client.getRealSkillLevel(skill);
+			skillBoostedLevel[ord] = client.getBoostedSkillLevel(skill);
+		}
+
+		// Drain pending hitsplats
+		List<Map<String, Object>> hits = tickBuffer.drainPendingHits();
+
+		// We skip objects and ground items from the per-tick buffer to keep it lightweight.
+		// The /api/objects and /api/ground-items endpoints are still available for on-demand queries.
+
+		TickStateBuffer.TickSnapshot snapshot = new TickStateBuffer.TickSnapshot(
+			tick, timestamp, playerState, npcs,
+			null, // objects (omitted for performance)
+			null, // ground items (omitted for performance)
+			otherPlayers,
+			skillXp, skillRealLevel, skillBoostedLevel,
+			hits
+		);
+		tickBuffer.add(snapshot);
 	}
 
 	@Subscribe
 	public void onHitsplatApplied(HitsplatApplied event)
 	{
+		Actor target = event.getActor();
+		Hitsplat hitsplat = event.getHitsplat();
+
+		// Buffer hitsplat for the tick state buffer (always active)
+		if (tickBuffer != null)
+		{
+			String actorName = target != null ? target.getName() : "Unknown";
+			String kind = "other";
+			int actorId = -1;
+			if (target instanceof NPC)
+			{
+				kind = "npc";
+				actorId = ((NPC) target).getId();
+			}
+			else if (target instanceof Player)
+			{
+				kind = target == client.getLocalPlayer() ? "local" : "player";
+			}
+			tickBuffer.addPendingHit(new TickStateBuffer.PendingHit(
+				actorName, kind, actorId,
+				hitsplat.getAmount(), hitsplat.getHitsplatType(), hitsplat.isMine()
+			));
+		}
+
 		if (apiServer == null || (!apiServer.hasSseClients() && !apiServer.isRecording()))
 		{
 			return;
 		}
-
-		Actor target = event.getActor();
-		Hitsplat hitsplat = event.getHitsplat();
 
 		Map<String, Object> data = new LinkedHashMap<>();
 		data.put("tick", client.getTickCount());
@@ -675,9 +923,50 @@ public class OsrsCompanionPlugin extends Plugin
 		interaction.put("menuAction", event.getMenuAction().name());
 		apiServer.addInteraction(interaction);
 
+		// Feed into multi-layer action tracker
+		if (actionTracker != null)
+		{
+			Map<String, Object> actionDetails = new LinkedHashMap<>();
+			actionDetails.put("id", event.getId());
+			actionDetails.put("param0", event.getParam0());
+			actionDetails.put("param1", event.getParam1());
+			actionTracker.addMenuAction(
+				client.getTickCount(),
+				event.getMenuOption(),
+				cleanedTarget,
+				event.getMenuAction().name(),
+				actionDetails
+			);
+		}
+
 		// Broadcast SSE and/or record
 		if (apiServer.hasSseClients()) apiServer.broadcastEvent("menu_clicked", data);
 		if (apiServer.isRecording()) apiServer.addRecordingEvent("menu_clicked", data);
+	}
+
+	@Subscribe
+	public void onScriptCallbackEvent(ScriptCallbackEvent event)
+	{
+		if (actionTracker == null)
+		{
+			return;
+		}
+
+		String name = event.getEventName();
+		// Filter to interesting callbacks (skip very noisy ones)
+		if (name == null || name.isEmpty()) return;
+
+		// Only track action-related callbacks, skip rendering/UI noise
+		if (name.startsWith("cc_") || name.startsWith("if_") ||
+			name.contains("action") || name.contains("click") ||
+			name.contains("button") || name.contains("op"))
+		{
+			Map<String, Object> details = new LinkedHashMap<>();
+			details.put("eventName", name);
+			// Script args can be read from the client's intStack/stringStack
+			// but accessing them here is fragile; we log the event name for now
+			actionTracker.addScriptAction(client.getTickCount(), name, details);
+		}
 	}
 
 	@Subscribe

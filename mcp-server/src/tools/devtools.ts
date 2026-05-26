@@ -255,4 +255,64 @@ export function registerDevTools(server: McpServer) {
       }
     }
   );
+
+  server.tool(
+    "raw_actions",
+    "Get captured game actions from multiple sources — menu clicks, CS2 script callbacks, and inferred state changes (inventory/equipment changes without a corresponding menu click). This goes beyond standard MenuOptionClicked tracking by also detecting actions that bypass the menu system.\n\nSources:\n- **menu**: Standard user clicks and plugin-invoked menu actions\n- **script**: CS2 script callbacks (widget operations, banking, GE)\n- **inferred**: State changes detected without a menu click (e.g. quest rewards, script-driven item changes)\n\nUse this when the user asks 'what actions happened', 'what bypassed the menu', 'show raw actions', or wants to debug unexplained state changes.",
+    {
+      last: z
+        .number()
+        .min(1)
+        .max(500)
+        .default(50)
+        .describe("Number of recent actions to return (default 50)"),
+      source: z
+        .enum(["menu", "script", "inferred"])
+        .optional()
+        .describe("Filter by action source. Omit for all sources."),
+      search: z
+        .string()
+        .optional()
+        .describe("Search in action/target text (case-insensitive)"),
+    },
+    async ({ last, source, search }) => {
+      try {
+        const params: string[] = [];
+        params.push(`last=${last}`);
+        if (source) params.push(`source=${encodeURIComponent(source)}`);
+        if (search) params.push(`search=${encodeURIComponent(search)}`);
+        const query = `?${params.join("&")}`;
+        const data = await apiGet(`/api/actions${query}`);
+        const actions = data.actions || [];
+        if (actions.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No actions found (buffer: ${data.filled}/${data.capacity}).`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `# Actions — ${data.returned} of ${data.filled} (buffer ${data.capacity})`,
+        ];
+        for (const a of actions) {
+          const sourceTag = `[${a.source}]`;
+          const tickTag = `[+${a.tick}]`;
+          lines.push(`${tickTag} ${sourceTag} ${a.action}`);
+          if (a.details && Object.keys(a.details).length > 0) {
+            const detailStr = Object.entries(a.details)
+              .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+              .join(", ");
+            lines.push(`    ${detailStr}`);
+          }
+        }
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      } catch (err) {
+        return { content: [{ type: "text" as const, text: isApiError(err) }] };
+      }
+    }
+  );
 }

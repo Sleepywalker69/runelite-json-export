@@ -408,4 +408,46 @@ export function registerLiveStateTools(server: McpServer) {
       }
     }
   );
+
+  server.tool(
+    "chat",
+    "Get recent chat messages from the game. Shows game messages, public chat, private messages, clan chat, and more. Use this when the user asks 'what did the game say', 'any chat messages', 'what did someone say', or wants to read recent chat history.",
+    {
+      type: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by chat type: GAMEMESSAGE, PUBLICCHAT, PRIVATECHAT, PRIVATECHATOUT, FRIENDSCHAT, CLAN_CHAT, CLAN_MESSAGE, TRADE, SPAM, ENGINE, etc. Omit for all types."
+        ),
+      last: z
+        .number()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Limit to the last N messages. Omit to return all buffered messages (up to 200)."),
+    },
+    async ({ type, last }) => {
+      try {
+        const params: string[] = [];
+        if (type) params.push(`type=${encodeURIComponent(type)}`);
+        if (last) params.push(`last=${last}`);
+        const query = params.length > 0 ? `?${params.join("&")}` : "";
+        const data = await apiGet(`/api/chat${query}`);
+        const messages = data.messages || [];
+        if (messages.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No chat messages found." }],
+          };
+        }
+        const lines = [`# Chat Messages — ${messages.length}`];
+        for (const m of messages) {
+          const sender = m.sender ? `${m.sender}: ` : "";
+          lines.push(`[${m.type}] ${sender}${m.message}`);
+        }
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      } catch (err) {
+        return { content: [{ type: "text" as const, text: isApiError(err) }] };
+      }
+    }
+  );
 }

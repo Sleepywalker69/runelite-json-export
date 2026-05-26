@@ -25,6 +25,9 @@ dependencies {
 	// Gson is bundled with RuneLite, compileOnly is fine
 	compileOnly 'com.google.code.gson:gson:2.10.1'
 
+	// Logback is RuneLite's SLF4J backend, needed for log capture appender
+	compileOnly 'ch.qos.logback:logback-classic:1.2.11'
+
 	testImplementation 'junit:junit:4.12'
 	testImplementation group: 'net.runelite', name:'client', version: runeLiteVersion
 	testImplementation group: 'net.runelite', name:'jshell', version: runeLiteVersion

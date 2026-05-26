@@ -2,24 +2,24 @@
 
 A RuneLite plugin that exposes **live game data** via a local HTTP API, paired
 with an MCP server that gives AI assistants (Claude Desktop, Claude Code, etc.)
-direct access to 50+ game state tools. Think IDA for Old School RuneScape —
+direct access to 57 game state tools. Think IDA for Old School RuneScape —
 connect via MCP and query any data you need in real time.
 
 ## What It Does
 
 1. **RuneLite Plugin** — Runs a local HTTP API server (default `http://127.0.0.1:8085`)
-   inside RuneLite with 47 endpoints covering every aspect of game state.
+   inside RuneLite with 53 endpoints covering every aspect of game state.
 2. **MCP Server** — A TypeScript MCP server (`mcp-server/`) that wraps all HTTP
-   endpoints as 50 MCP tools with rich descriptions for intuitive AI prompting.
+   endpoints as 57 MCP tools with rich descriptions for intuitive AI prompting.
 3. **File Sync** — Periodically saves player snapshots to JSON files for offline use.
 
 **All data stays on your machine. The API only binds to localhost.**
 
-## MCP Tools (50 total)
+## MCP Tools (57 total)
 
-The MCP server provides tools across six categories:
+The MCP server provides tools across eight categories:
 
-### Live Game State (15 tools)
+### Live Game State (16 tools)
 | Tool | What it does |
 |------|-------------|
 | `game_state` | Login status, world, tick count, player location |
@@ -37,13 +37,15 @@ The MCP server provides tools across six categories:
 | `tile_info` | Collision flags at specific coordinates |
 | `plugins` | Loaded RuneLite plugins and config |
 | `player_appearance` | Equipment, body kits, colors, gender |
+| `chat` | Recent chat messages — game, public, private, clan. Filterable by type and count |
 
-### Interfaces & Widgets (3 tools)
+### Interfaces & Widgets (4 tools)
 | Tool | What it does |
 |------|-------------|
 | `interfaces` | All currently open game interfaces |
 | `inspect_widget` | Read a specific widget group's children and properties |
 | `find_item_in_interface` | **Smart search** — finds an item by name in any open container (shop, bank, trade). Supports fuzzy matching: "d scim" finds "Dragon scimitar" |
+| `dialog` | Current NPC/player dialogue — text, speaker name, selectable options, continue button state |
 
 ### Game Definitions (6 tools)
 | Tool | What it does |
@@ -55,7 +57,7 @@ The MCP server provides tools across six categories:
 | `lookup_enum` | Enum definition (key-value pairs) |
 | `lookup_struct` | Struct definition (param values) |
 
-### DevTools (8 tools)
+### DevTools (9 tools)
 | Tool | What it does |
 |------|-------------|
 | `read_varbit` | Read current varbit value(s) |
@@ -66,8 +68,9 @@ The MCP server provides tools across six categories:
 | `active_prayers` | Currently active prayers and prayer points |
 | `xp_tracker` | Session XP gains per skill |
 | `loot_log` | Session loot drops, filterable by NPC |
+| `raw_actions` | **Multi-layer action capture** — tracks menu clicks, CS2 script callbacks, and inferred state changes. Detects actions that bypass the normal menu system |
 
-### Debug & Recording (5 tools)
+### Debug & Recording (8 tools)
 | Tool | What it does |
 |------|-------------|
 | `debug_snapshot` | **Instant** full combat state snapshot — player, NPCs, prayers, inventory, equipment, recent interactions, effects. One call does it all |
@@ -75,6 +78,9 @@ The MCP server provides tools across six categories:
 | `stop_recording` | Stop an active recording early |
 | `recording_status` | Check recording progress — events captured, time remaining, active filter |
 | `get_recording` | Retrieve recorded timeline with filtering by event type and tick range |
+| `buffer` | **Tick-level state history** with delta encoding — query what changed in the last N ticks. Stores ~10 min of per-tick snapshots. Supports filtering by entity type, name, and ID |
+| `screenshot` | Capture the game viewport as a PNG image |
+| `runelite_logs` | Read RuneLite console/plugin logs — filter by level, logger name, or search text |
 
 **19 recordable event types:** `game_tick`, `hitsplat`, `animation_changed`, `npc_spawned`, `npc_despawned`, `actor_death`, `var_changed`, `menu_clicked`, `stat_changed`, `item_changed`, `interacting_changed`, `object_spawned`, `object_despawned`, `projectile_spawned`, `gfx_created`, `chat_message`, `sound_effect`, `loot_received`, `game_state_changed`
 
@@ -154,10 +160,16 @@ With RuneLite running and the plugin enabled, ask Claude things like:
 - "Why is it stuck? Debug this" (instant snapshot)
 - "Record the next 3 minutes while I run the script"
 - "What happened? Show me the recording"
+- "What does the NPC say?" (reads dialogue text and options)
+- "Take a screenshot" (captures game viewport as PNG)
+- "What changed in the last 5 ticks?" (delta-encoded state history)
+- "Any errors in the RuneLite console?" (reads plugin logs)
+- "What chat messages came in?" (reads recent chat)
+- "Show me raw actions — anything bypass the menu?" (multi-layer action capture)
 
 ## Live API Endpoints
 
-All 47 endpoints available at `http://127.0.0.1:8085`:
+All 53 endpoints available at `http://127.0.0.1:8085`:
 
 | Endpoint | Description |
 |----------|-------------|
@@ -190,7 +202,12 @@ All 47 endpoints available at `http://127.0.0.1:8085`:
 | `GET /api/struct-def?id=X` | Struct definition |
 | `GET /api/enum-def?id=X` | Enum definition |
 | `GET /api/player-appearance` | Player appearance. `?name=X` for others |
-| `GET /api/chat` | Recent chat messages. `?type=X` to filter |
+| `GET /api/chat` | Recent chat messages. `?type=X`, `?last=N` |
+| `GET /api/dialog` | Current NPC/player dialogue state |
+| `GET /api/screenshot` | Capture game viewport as PNG (`Content-Type: image/png`) |
+| `GET /api/buffer` | Tick-level state history. `?t=N`, `?types=npc,player,skills,hits`, `?names=X`, `?ids=X` |
+| `GET /api/logs` | RuneLite console logs. `?level=INFO\|WARN\|ERROR`, `?logger=X`, `?search=X`, `?last=N` |
+| `GET /api/actions` | Multi-layer action tracker. `?last=N`, `?source=menu\|script\|inferred`, `?search=X` |
 | `GET /api/camera` | Camera position and angles |
 | `GET /api/scene` | Scene base coords and map regions |
 | `GET /api/tile?x=X&y=Y` | Tile collision flags |

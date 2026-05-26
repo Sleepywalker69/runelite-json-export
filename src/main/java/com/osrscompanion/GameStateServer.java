@@ -14,6 +14,7 @@ import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.ui.DrawManager;
 
 import java.lang.reflect.Method;
 
@@ -22,9 +23,12 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
+import javax.imageio.ImageIO;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -44,6 +48,10 @@ public class GameStateServer
 	private final Gson gson;
 	private final PluginManager pluginManager;
 	private final ConfigManager configManager;
+	private final DrawManager drawManager;
+	private final TickStateBuffer tickBuffer;
+	private final LogCaptureAppender logCaptureAppender;
+	private final ActionTracker actionTracker;
 	private HttpServer server;
 
 	private final List<Map<String, Object>> chatBuffer = Collections.synchronizedList(new LinkedList<>());
@@ -117,7 +125,9 @@ public class GameStateServer
 	}
 
 	public GameStateServer(Client client, ClientThread clientThread, Gson gson,
-		PluginManager pluginManager, ConfigManager configManager)
+		PluginManager pluginManager, ConfigManager configManager,
+		DrawManager drawManager, TickStateBuffer tickBuffer,
+		LogCaptureAppender logCaptureAppender, ActionTracker actionTracker)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
@@ -125,6 +135,10 @@ public class GameStateServer
 		this.compactGson = new Gson();
 		this.pluginManager = pluginManager;
 		this.configManager = configManager;
+		this.drawManager = drawManager;
+		this.tickBuffer = tickBuffer;
+		this.logCaptureAppender = logCaptureAppender;
+		this.actionTracker = actionTracker;
 		this.httpClient = new OkHttpClient.Builder()
 			.connectTimeout(10, TimeUnit.SECONDS)
 			.readTimeout(15, TimeUnit.SECONDS)
@@ -155,6 +169,11 @@ public class GameStateServer
 		server.createContext("/api/npc-def", this::handleNpcDef);
 		server.createContext("/api/obj-def", this::handleObjDef);
 		server.createContext("/api/chat", this::handleChat);
+		server.createContext("/api/dialog", this::handleDialog);
+		server.createContext("/api/screenshot", this::handleScreenshot);
+		server.createContext("/api/buffer", this::handleBuffer);
+		server.createContext("/api/logs", this::handleLogs);
+		server.createContext("/api/actions", this::handleActions);
 		server.createContext("/api/scene", this::handleScene);
 		server.createContext("/api/tile", this::handleTile);
 		server.createContext("/api/plugins", this::handlePlugins);
@@ -1082,7 +1101,12 @@ public class GameStateServer
 		endpoints.add(ep("GET /api/item-def?id=X", "Item definition by ID. Also: ?name=X for search (?limit=N, ?exact=true)"));
 		endpoints.add(ep("GET /api/npc-def?id=X", "NPC definition by ID. Also: ?name=X for search (?limit=N, ?exact=true)"));
 		endpoints.add(ep("GET /api/obj-def?id=X", "Object definition by ID. Also: ?name=X for search (?limit=N, ?exact=true)"));
-		endpoints.add(ep("GET /api/chat", "Recent chat messages (last 200). ?type=X to filter"));
+		endpoints.add(ep("GET /api/chat", "Recent chat messages (last 200). ?type=X to filter, ?last=N for recent"));
+		endpoints.add(ep("GET /api/dialog", "Current NPC/player dialogue state: text, speaker, options, continue button"));
+		endpoints.add(ep("GET /api/screenshot", "Capture game viewport as PNG image (Content-Type: image/png)"));
+		endpoints.add(ep("GET /api/buffer", "Tick-level state buffer. ?t=N (pos=absolute tick, neg=last N deltas, default -5). ?types=npc,player,skills,hits. ?names=X &ids=X &tile=x,y,plane &area=x1,y1,x2,y2,plane"));
+		endpoints.add(ep("GET /api/logs", "RuneLite console logs. ?level=INFO|WARN|ERROR &logger=X &search=X &last=N (default 100)"));
+		endpoints.add(ep("GET /api/actions", "Multi-layer action tracker. ?last=N &source=menu|script|inferred &search=X"));
 		endpoints.add(ep("GET /api/scene", "Scene info: base coords, map regions, plane"));
 		endpoints.add(ep("GET /api/tile?x=X&y=Y&plane=Z", "Tile info and collision flags at world coordinates"));
 		endpoints.add(ep("GET /api/projectiles", "Active projectiles in flight with targets and timing"));
@@ -2567,6 +2591,7 @@ public class GameStateServer
 	{
 		Map<String, String> params = parseQuery(exchange.getRequestURI());
 		String filterType = params.get("type");
+		int last = intParam(params, "last", 0);
 
 		List<Map<String, Object>> messages;
 		if (filterType != null)
@@ -2585,9 +2610,701 @@ public class GameStateServer
 			messages = new ArrayList<>(chatBuffer);
 		}
 
+		if (last > 0 && messages.size() > last)
+		{
+			messages = messages.subList(messages.size() - last, messages.size());
+		}
+
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("count", messages.size());
 		result.put("messages", messages);
+		sendJson(exchange, 200, result);
+	}
+
+	private void handleDialog(HttpExchange exchange) throws IOException
+	{
+		if (!requireLoggedIn(exchange))
+		{
+			return;
+		}
+		try
+		{
+			Object data = onClientThread(() ->
+			{
+				Map<String, Object> result = new LinkedHashMap<>();
+
+				// NPC dialogue text (group 231, child 4)
+				Widget npcDialog = client.getWidget(231, 4);
+				// Player dialogue text (group 217, child 4)
+				Widget playerDialog = client.getWidget(217, 4);
+				// Options container (group 233, child 0)
+				Widget optionsWidget = client.getWidget(233, 0);
+				// Continue button (group 231, child 5)
+				Widget continueWidget = client.getWidget(231, 5);
+				// Speaker name (group 231, child 3)
+				Widget speakerWidget = client.getWidget(231, 3);
+
+				boolean npcOpen = npcDialog != null && !npcDialog.isHidden();
+				boolean playerOpen = playerDialog != null && !playerDialog.isHidden();
+				boolean optionsOpen = optionsWidget != null && !optionsWidget.isHidden();
+				boolean open = npcOpen || playerOpen || optionsOpen;
+
+				result.put("open", open);
+				if (!open)
+				{
+					result.put("canContinue", false);
+					result.put("hasOptions", false);
+					return result;
+				}
+
+				boolean canContinue = continueWidget != null && !continueWidget.isHidden();
+				result.put("canContinue", canContinue);
+
+				// Text content
+				String text = null;
+				if (npcOpen)
+				{
+					text = npcDialog.getText();
+				}
+				else if (playerOpen)
+				{
+					text = playerDialog.getText();
+				}
+				if (text != null)
+				{
+					text = text.replaceAll("<[^>]+>", "").trim();
+				}
+				result.put("text", text);
+
+				// Speaker name
+				String speaker = null;
+				if (speakerWidget != null && !speakerWidget.isHidden())
+				{
+					speaker = speakerWidget.getText();
+					if (speaker != null)
+					{
+						speaker = speaker.replaceAll("<[^>]+>", "").trim();
+					}
+				}
+				result.put("speaker", speaker);
+
+				// Options
+				List<String> options = new ArrayList<>();
+				if (optionsOpen)
+				{
+					Widget[] children = optionsWidget.getDynamicChildren();
+					if (children != null)
+					{
+						for (Widget child : children)
+						{
+							if (child != null)
+							{
+								String optText = child.getText();
+								if (optText != null && !optText.isEmpty())
+								{
+									options.add(optText.replaceAll("<[^>]+>", "").trim());
+								}
+							}
+						}
+					}
+				}
+				result.put("hasOptions", !options.isEmpty());
+				result.put("options", options);
+
+				return result;
+			});
+			sendJson(exchange, 200, data);
+		}
+		catch (Exception e)
+		{
+			sendError(exchange, 500, e.getMessage());
+		}
+	}
+
+	private void handleScreenshot(HttpExchange exchange) throws IOException
+	{
+		if (!requireLoggedIn(exchange))
+		{
+			return;
+		}
+		try
+		{
+			CompletableFuture<BufferedImage> future = new CompletableFuture<>();
+			drawManager.requestNextFrameListener(image ->
+			{
+				try
+				{
+					BufferedImage bi;
+					if (image instanceof BufferedImage)
+					{
+						bi = (BufferedImage) image;
+					}
+					else
+					{
+						bi = new BufferedImage(image.getWidth(null), image.getHeight(null),
+							BufferedImage.TYPE_INT_RGB);
+						java.awt.Graphics2D g = bi.createGraphics();
+						try
+						{
+							g.drawImage(image, 0, 0, null);
+						}
+						finally
+						{
+							g.dispose();
+						}
+					}
+					future.complete(bi);
+				}
+				catch (Throwable t)
+				{
+					future.completeExceptionally(t);
+				}
+			});
+
+			BufferedImage img = future.get(5, TimeUnit.SECONDS);
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			ImageIO.write(img, "png", baos);
+			byte[] pngBytes = baos.toByteArray();
+
+			exchange.getResponseHeaders().set("Content-Type", "image/png");
+			exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+			exchange.sendResponseHeaders(200, pngBytes.length);
+			try (OutputStream os = exchange.getResponseBody())
+			{
+				os.write(pngBytes);
+			}
+		}
+		catch (Exception e)
+		{
+			sendError(exchange, 500, "Screenshot failed: " + e.getMessage());
+		}
+	}
+
+	private void handleBuffer(HttpExchange exchange) throws IOException
+	{
+		if (!requireLoggedIn(exchange))
+		{
+			return;
+		}
+		if (tickBuffer == null)
+		{
+			sendError(exchange, 503, "Tick buffer not initialized");
+			return;
+		}
+
+		Map<String, String> params = parseQuery(exchange.getRequestURI());
+		int t = intParam(params, "t", -5);
+
+		// Parse filters
+		String typesParam = params.get("types");
+		Set<String> typeFilter = null;
+		if (typesParam != null && !typesParam.isEmpty())
+		{
+			typeFilter = new HashSet<>(Arrays.asList(typesParam.toLowerCase().split(",")));
+		}
+
+		String namesParam = params.get("names");
+		Set<String> nameFilter = null;
+		if (namesParam != null && !namesParam.isEmpty())
+		{
+			nameFilter = new HashSet<>();
+			for (String n : namesParam.split(","))
+			{
+				nameFilter.add(n.trim().toLowerCase());
+			}
+		}
+
+		String idsParam = params.get("ids");
+		Set<Integer> idFilter = null;
+		if (idsParam != null && !idsParam.isEmpty())
+		{
+			idFilter = new HashSet<>();
+			for (String id : idsParam.split(","))
+			{
+				try { idFilter.add(Integer.parseInt(id.trim())); } catch (NumberFormatException ignored) {}
+			}
+		}
+
+		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("bufferCapacity", tickBuffer.capacity());
+		result.put("bufferFilled", tickBuffer.filled());
+		int[] range = tickBuffer.range();
+		if (range != null)
+		{
+			Map<String, Object> rangeMap = new LinkedHashMap<>();
+			rangeMap.put("from", range[0]);
+			rangeMap.put("to", range[1]);
+			result.put("bufferRange", rangeMap);
+		}
+
+		if (t > 0)
+		{
+			// Absolute mode: full snapshot at specific tick
+			result.put("type", "absolute");
+			result.put("tick", t);
+
+			TickStateBuffer.TickSnapshot snap = tickBuffer.getByTick(t);
+			if (snap == null)
+			{
+				result.put("found", false);
+				sendJson(exchange, 200, result);
+				return;
+			}
+			result.put("found", true);
+			result.put("timestampMs", snap.timestampMs);
+
+			boolean includeAll = typeFilter == null;
+
+			if ((includeAll || typeFilter.contains("player")) && snap.player != null)
+			{
+				result.put("player", snap.player);
+			}
+			if ((includeAll || typeFilter.contains("npc")) && !snap.npcs.isEmpty())
+			{
+				result.put("npcs", filterEntities(snap.npcs, nameFilter, idFilter));
+			}
+			if ((includeAll || typeFilter.contains("otherplayer")) && !snap.otherPlayers.isEmpty())
+			{
+				result.put("otherPlayers", filterByName(snap.otherPlayers, nameFilter));
+			}
+			if ((includeAll || typeFilter.contains("skills")) && snap.skillXp != null)
+			{
+				result.put("skills", buildSkillsMap(snap));
+			}
+			if ((includeAll || typeFilter.contains("hits")) && !snap.hits.isEmpty())
+			{
+				result.put("hits", snap.hits);
+			}
+
+			sendJson(exchange, 200, result);
+		}
+		else
+		{
+			// Delta mode: last |t| ticks with sparse changes
+			int lastN = Math.abs(t);
+			result.put("type", "delta");
+			result.put("requestedTicks", lastN);
+
+			List<TickStateBuffer.TickSnapshot> snapshots = tickBuffer.getLastN(lastN);
+			if (snapshots.isEmpty())
+			{
+				result.put("ticks", Collections.emptyList());
+				sendJson(exchange, 200, result);
+				return;
+			}
+
+			boolean includeAll = typeFilter == null;
+			List<Map<String, Object>> tickDeltas = new ArrayList<>();
+
+			for (int i = 0; i < snapshots.size(); i++)
+			{
+				TickStateBuffer.TickSnapshot curr = snapshots.get(i);
+				TickStateBuffer.TickSnapshot prev = i > 0 ? snapshots.get(i - 1) : null;
+
+				Map<String, Object> tickEntry = new LinkedHashMap<>();
+				tickEntry.put("tick", curr.tick);
+				tickEntry.put("timestampMs", curr.timestampMs);
+
+				Map<String, Object> deltas = new LinkedHashMap<>();
+
+				// Player delta
+				if (includeAll || typeFilter.contains("player"))
+				{
+					if (prev == null)
+					{
+						if (curr.player != null)
+						{
+							deltas.put("player", curr.player);
+						}
+					}
+					else if (curr.player != null)
+					{
+						Map<String, Object> pDelta = diffMaps(prev.player, curr.player);
+						if (!pDelta.isEmpty())
+						{
+							deltas.put("player", pDelta);
+						}
+					}
+				}
+
+				// NPC delta
+				if (includeAll || typeFilter.contains("npc"))
+				{
+					Map<String, Object> npcDelta = diffEntityList(
+						prev != null ? prev.npcs : Collections.emptyList(),
+						curr.npcs,
+						"index", nameFilter, idFilter
+					);
+					if (!npcDelta.isEmpty())
+					{
+						deltas.put("npcs", npcDelta);
+					}
+				}
+
+				// Other players delta
+				if (includeAll || typeFilter.contains("otherplayer"))
+				{
+					Map<String, Object> playerDelta = diffEntityList(
+						prev != null ? prev.otherPlayers : Collections.emptyList(),
+						curr.otherPlayers,
+						"name", nameFilter, null
+					);
+					if (!playerDelta.isEmpty())
+					{
+						deltas.put("otherPlayers", playerDelta);
+					}
+				}
+
+				// Skills delta
+				if (includeAll || typeFilter.contains("skills"))
+				{
+					if (prev != null && curr.skillXp != null && prev.skillXp != null)
+					{
+						Map<String, Object> skillDelta = diffSkills(prev, curr);
+						if (!skillDelta.isEmpty())
+						{
+							deltas.put("skills", skillDelta);
+						}
+					}
+					else if (prev == null && curr.skillXp != null)
+					{
+						deltas.put("skills", buildSkillsMap(curr));
+					}
+				}
+
+				// Hits (always "added", they're events not persistent state)
+				if ((includeAll || typeFilter.contains("hits")) && !curr.hits.isEmpty())
+				{
+					deltas.put("hits", curr.hits);
+				}
+
+				if (!deltas.isEmpty())
+				{
+					tickEntry.put("deltas", deltas);
+				}
+				tickDeltas.add(tickEntry);
+			}
+
+			result.put("ticks", tickDeltas);
+			sendJson(exchange, 200, result);
+		}
+	}
+
+	// ── Buffer helper methods ──────────────────────────────────────
+
+	private List<Map<String, Object>> filterEntities(List<Map<String, Object>> entities,
+		Set<String> nameFilter, Set<Integer> idFilter)
+	{
+		if (nameFilter == null && idFilter == null) return entities;
+
+		List<Map<String, Object>> result = new ArrayList<>();
+		for (Map<String, Object> e : entities)
+		{
+			boolean match = true;
+			if (nameFilter != null)
+			{
+				String name = String.valueOf(e.getOrDefault("name", "")).toLowerCase();
+				boolean nameMatch = false;
+				for (String filter : nameFilter)
+				{
+					if (name.contains(filter)) { nameMatch = true; break; }
+				}
+				if (!nameMatch) match = false;
+			}
+			if (match && idFilter != null)
+			{
+				Object id = e.get("id");
+				if (id instanceof Number && !idFilter.contains(((Number) id).intValue()))
+				{
+					match = false;
+				}
+			}
+			if (match) result.add(e);
+		}
+		return result;
+	}
+
+	private List<Map<String, Object>> filterByName(List<Map<String, Object>> entities,
+		Set<String> nameFilter)
+	{
+		if (nameFilter == null) return entities;
+		List<Map<String, Object>> result = new ArrayList<>();
+		for (Map<String, Object> e : entities)
+		{
+			String name = String.valueOf(e.getOrDefault("name", "")).toLowerCase();
+			for (String filter : nameFilter)
+			{
+				if (name.contains(filter)) { result.add(e); break; }
+			}
+		}
+		return result;
+	}
+
+	private Map<String, Object> diffMaps(Map<String, Object> prev, Map<String, Object> curr)
+	{
+		if (prev == null) return curr != null ? new LinkedHashMap<>(curr) : new LinkedHashMap<>();
+		if (curr == null) return new LinkedHashMap<>();
+
+		Map<String, Object> delta = new LinkedHashMap<>();
+		for (Map.Entry<String, Object> entry : curr.entrySet())
+		{
+			Object oldVal = prev.get(entry.getKey());
+			Object newVal = entry.getValue();
+			if (!Objects.equals(oldVal, newVal))
+			{
+				delta.put(entry.getKey(), newVal);
+			}
+		}
+		// Check for removed keys
+		for (String key : prev.keySet())
+		{
+			if (!curr.containsKey(key))
+			{
+				delta.put(key, null);
+			}
+		}
+		return delta;
+	}
+
+	private Map<String, Object> diffEntityList(
+		List<Map<String, Object>> prevList,
+		List<Map<String, Object>> currList,
+		String keyField,
+		Set<String> nameFilter,
+		Set<Integer> idFilter)
+	{
+		// Build keyed maps
+		Map<String, Map<String, Object>> prevMap = new LinkedHashMap<>();
+		for (Map<String, Object> e : prevList)
+		{
+			String key = String.valueOf(e.get(keyField));
+			prevMap.put(key, e);
+		}
+		Map<String, Map<String, Object>> currMap = new LinkedHashMap<>();
+		for (Map<String, Object> e : currList)
+		{
+			String key = String.valueOf(e.get(keyField));
+			currMap.put(key, e);
+		}
+
+		List<Map<String, Object>> added = new ArrayList<>();
+		List<Map<String, Object>> removed = new ArrayList<>();
+		List<Map<String, Object>> changed = new ArrayList<>();
+
+		// Find added and changed
+		for (Map.Entry<String, Map<String, Object>> entry : currMap.entrySet())
+		{
+			Map<String, Object> curr = entry.getValue();
+			if (!matchesFilters(curr, nameFilter, idFilter)) continue;
+
+			Map<String, Object> prev = prevMap.get(entry.getKey());
+			if (prev == null)
+			{
+				added.add(curr);
+			}
+			else
+			{
+				Map<String, Object> delta = diffMaps(prev, curr);
+				if (!delta.isEmpty())
+				{
+					delta.put(keyField, entry.getKey()); // include key for identification
+					changed.add(delta);
+				}
+			}
+		}
+
+		// Find removed
+		for (Map.Entry<String, Map<String, Object>> entry : prevMap.entrySet())
+		{
+			if (!currMap.containsKey(entry.getKey()))
+			{
+				Map<String, Object> prev = entry.getValue();
+				if (matchesFilters(prev, nameFilter, idFilter))
+				{
+					Map<String, Object> ref = new LinkedHashMap<>();
+					ref.put(keyField, entry.getKey());
+					if (prev.containsKey("name")) ref.put("name", prev.get("name"));
+					removed.add(ref);
+				}
+			}
+		}
+
+		Map<String, Object> result = new LinkedHashMap<>();
+		if (!added.isEmpty()) result.put("added", added);
+		if (!removed.isEmpty()) result.put("removed", removed);
+		if (!changed.isEmpty()) result.put("changed", changed);
+		return result;
+	}
+
+	private boolean matchesFilters(Map<String, Object> entity,
+		Set<String> nameFilter, Set<Integer> idFilter)
+	{
+		if (nameFilter != null)
+		{
+			String name = String.valueOf(entity.getOrDefault("name", "")).toLowerCase();
+			boolean found = false;
+			for (String filter : nameFilter)
+			{
+				if (name.contains(filter)) { found = true; break; }
+			}
+			if (!found) return false;
+		}
+		if (idFilter != null)
+		{
+			Object id = entity.get("id");
+			if (id instanceof Number && !idFilter.contains(((Number) id).intValue()))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private Map<String, Object> diffSkills(TickStateBuffer.TickSnapshot prev,
+		TickStateBuffer.TickSnapshot curr)
+	{
+		Map<String, Object> delta = new LinkedHashMap<>();
+		Skill[] skills = Skill.values();
+		for (Skill skill : skills)
+		{
+			if (skill == Skill.OVERALL) continue;
+			int ord = skill.ordinal();
+			if (ord >= curr.skillXp.length || ord >= prev.skillXp.length) continue;
+
+			int xpDiff = curr.skillXp[ord] - prev.skillXp[ord];
+			int realDiff = curr.skillRealLevel[ord] - prev.skillRealLevel[ord];
+			int boostedDiff = curr.skillBoostedLevel[ord] - prev.skillBoostedLevel[ord];
+
+			if (xpDiff != 0 || realDiff != 0 || boostedDiff != 0)
+			{
+				Map<String, Object> s = new LinkedHashMap<>();
+				if (xpDiff != 0) s.put("xpGained", xpDiff);
+				if (realDiff != 0) s.put("levelChange", realDiff);
+				if (boostedDiff != 0) s.put("boostedChange", boostedDiff);
+				s.put("xp", curr.skillXp[ord]);
+				s.put("level", curr.skillRealLevel[ord]);
+				s.put("boosted", curr.skillBoostedLevel[ord]);
+				delta.put(skill.getName(), s);
+			}
+		}
+		return delta;
+	}
+
+	private Map<String, Object> buildSkillsMap(TickStateBuffer.TickSnapshot snap)
+	{
+		Map<String, Object> skills = new LinkedHashMap<>();
+		for (Skill skill : Skill.values())
+		{
+			if (skill == Skill.OVERALL) continue;
+			int ord = skill.ordinal();
+			if (ord >= snap.skillXp.length) continue;
+
+			Map<String, Object> s = new LinkedHashMap<>();
+			s.put("xp", snap.skillXp[ord]);
+			s.put("level", snap.skillRealLevel[ord]);
+			s.put("boosted", snap.skillBoostedLevel[ord]);
+			skills.put(skill.getName(), s);
+		}
+		return skills;
+	}
+
+	private void handleLogs(HttpExchange exchange) throws IOException
+	{
+		if (logCaptureAppender == null)
+		{
+			sendError(exchange, 503, "Log capture not initialized");
+			return;
+		}
+
+		Map<String, String> params = parseQuery(exchange.getRequestURI());
+		String levelFilter = params.get("level");
+		String loggerFilter = params.get("logger");
+		String searchFilter = params.get("search");
+		int last = intParam(params, "last", 100);
+
+		List<Map<String, Object>> entries = logCaptureAppender.getEntries();
+
+		// Filter by minimum level
+		if (levelFilter != null)
+		{
+			int minLevel = levelOrdinal(levelFilter.toUpperCase());
+			entries.removeIf(e -> levelOrdinal((String) e.get("level")) < minLevel);
+		}
+
+		// Filter by logger name
+		if (loggerFilter != null)
+		{
+			String lowerFilter = loggerFilter.toLowerCase();
+			entries.removeIf(e ->
+			{
+				String logger = (String) e.get("loggerName");
+				return logger == null || !logger.toLowerCase().contains(lowerFilter);
+			});
+		}
+
+		// Filter by message content
+		if (searchFilter != null)
+		{
+			String lowerSearch = searchFilter.toLowerCase();
+			entries.removeIf(e ->
+			{
+				String msg = (String) e.get("message");
+				return msg == null || !msg.toLowerCase().contains(lowerSearch);
+			});
+		}
+
+		// Truncate to last N
+		if (last > 0 && entries.size() > last)
+		{
+			entries = entries.subList(entries.size() - last, entries.size());
+		}
+
+		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("count", entries.size());
+		result.put("entries", entries);
+		sendJson(exchange, 200, result);
+	}
+
+	private static int levelOrdinal(String level)
+	{
+		switch (level)
+		{
+			case "TRACE": return 0;
+			case "DEBUG": return 1;
+			case "INFO": return 2;
+			case "WARN": return 3;
+			case "ERROR": return 4;
+			default: return 0;
+		}
+	}
+
+	private void handleActions(HttpExchange exchange) throws IOException
+	{
+		if (actionTracker == null)
+		{
+			sendError(exchange, 503, "Action tracker not initialized");
+			return;
+		}
+
+		Map<String, String> params = parseQuery(exchange.getRequestURI());
+		int last = intParam(params, "last", 50);
+		String source = params.get("source");
+		String search = params.get("search");
+
+		List<ActionTracker.TrackedAction> actions = actionTracker.getActions(last, source, search);
+
+		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("capacity", actionTracker.capacity());
+		result.put("filled", actionTracker.filled());
+		result.put("returned", actions.size());
+
+		List<Map<String, Object>> actionList = new ArrayList<>();
+		for (ActionTracker.TrackedAction a : actions)
+		{
+			actionList.add(a.toMap());
+		}
+		result.put("actions", actionList);
+
 		sendJson(exchange, 200, result);
 	}
 

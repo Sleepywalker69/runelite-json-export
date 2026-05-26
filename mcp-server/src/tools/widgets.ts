@@ -234,4 +234,39 @@ export function registerWidgetTools(server: McpServer) {
       }
     }
   );
+
+  server.tool(
+    "dialog",
+    "Get the current NPC or player dialogue state. Shows the dialogue text, speaker name, selectable options, and whether you can click Continue. Use this when the user asks 'what does the NPC say', 'what are the dialogue options', 'what should I pick', or when interacting with any NPC conversation.",
+    {},
+    async () => {
+      try {
+        const data = await apiGet("/api/dialog");
+        if (!data.open) {
+          return {
+            content: [{ type: "text" as const, text: "No dialogue is currently open." }],
+          };
+        }
+        const lines = ["# Dialogue"];
+        if (data.speaker) {
+          lines.push(`Speaker: ${data.speaker}`);
+        }
+        if (data.text) {
+          lines.push(`\n${data.text}`);
+        }
+        if (data.canContinue) {
+          lines.push(`\n[Click to continue]`);
+        }
+        if (data.hasOptions && data.options?.length > 0) {
+          lines.push(`\n## Options`);
+          for (let i = 0; i < data.options.length; i++) {
+            lines.push(`  ${i + 1}. ${data.options[i]}`);
+          }
+        }
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      } catch (err) {
+        return { content: [{ type: "text" as const, text: isApiError(err) }] };
+      }
+    }
+  );
 }

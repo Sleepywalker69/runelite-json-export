@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.GameStateServer;
 import com.osrscompanion.OsrsCompanionPlugin;
 import net.runelite.api.Client;
@@ -35,24 +37,24 @@ public class StatsPanel extends JPanel
 
 		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// === XP Section ===
 		JPanel xpHeaderRow = new JPanel(new BorderLayout());
 		xpHeaderRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		xpHeaderRow.setMaximumSize(new Dimension(600, 22));
+		xpHeaderRow.setMaximumSize(dim(600, 22));
 		xpHeaderRow.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
 		JLabel xpHeaderLabel = new JLabel("XP Tracker");
 		xpHeaderLabel.setForeground(ColorScheme.BRAND_ORANGE);
-		xpHeaderLabel.setFont(xpHeaderLabel.getFont().deriveFont(Font.BOLD, 11f));
+		xpHeaderLabel.setFont(xpHeaderLabel.getFont().deriveFont(Font.BOLD, fontSize(11f)));
 		xpHeaderRow.add(xpHeaderLabel, BorderLayout.WEST);
 
 		JButton copyStatsBtn = new JButton("Copy");
-		copyStatsBtn.setFont(copyStatsBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		copyStatsBtn.setFont(copyStatsBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		copyStatsBtn.setFocusPainted(false);
 		copyStatsBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		copyStatsBtn.setForeground(Color.WHITE);
-		copyStatsBtn.setBorder(new EmptyBorder(2, 8, 2, 8));
+		copyStatsBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
 		copyStatsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		copyStatsBtn.addActionListener(e -> copyStats());
 		xpHeaderRow.add(copyStatsBtn, BorderLayout.EAST);
@@ -60,29 +62,29 @@ public class StatsPanel extends JPanel
 
 		JPanel summaryRow = new JPanel(new BorderLayout());
 		summaryRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		summaryRow.setMaximumSize(new Dimension(600, 18));
+		summaryRow.setMaximumSize(dim(600, 18));
 		JLabel totalLabel = new JLabel("Total XP:");
 		totalLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		totalLabel.setFont(totalLabel.getFont().deriveFont(11f));
+		totalLabel.setFont(totalLabel.getFont().deriveFont(fontSize(11f)));
 		totalXpLabel.setForeground(Color.WHITE);
-		totalXpLabel.setFont(totalXpLabel.getFont().deriveFont(Font.BOLD, 11f));
+		totalXpLabel.setFont(totalXpLabel.getFont().deriveFont(Font.BOLD, fontSize(11f)));
 		summaryRow.add(totalLabel, BorderLayout.WEST);
 		summaryRow.add(totalXpLabel, BorderLayout.EAST);
 		add(summaryRow);
 
 		JPanel timeRow = new JPanel(new BorderLayout());
 		timeRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		timeRow.setMaximumSize(new Dimension(600, 18));
+		timeRow.setMaximumSize(dim(600, 18));
 		JLabel timeLabel = new JLabel("Session:");
 		timeLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		timeLabel.setFont(timeLabel.getFont().deriveFont(11f));
+		timeLabel.setFont(timeLabel.getFont().deriveFont(fontSize(11f)));
 		sessionTimeLabel.setForeground(Color.WHITE);
-		sessionTimeLabel.setFont(sessionTimeLabel.getFont().deriveFont(11f));
+		sessionTimeLabel.setFont(sessionTimeLabel.getFont().deriveFont(fontSize(11f)));
 		timeRow.add(timeLabel, BorderLayout.WEST);
 		timeRow.add(sessionTimeLabel, BorderLayout.EAST);
 		add(timeRow);
 
-		add(Box.createVerticalStrut(4));
+		add(Box.createVerticalStrut(px(4)));
 
 		xpPanel = new JPanel();
 		xpPanel.setLayout(new BoxLayout(xpPanel, BoxLayout.Y_AXIS));
@@ -91,29 +93,29 @@ public class StatsPanel extends JPanel
 		JScrollPane xpScroll = new JScrollPane(xpPanel);
 		xpScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		xpScroll.setBorder(null);
-		xpScroll.setPreferredSize(new Dimension(0, 150));
-		xpScroll.setMaximumSize(new Dimension(600, 200));
-		xpScroll.getVerticalScrollBar().setUnitIncrement(16);
+		xpScroll.setPreferredSize(new Dimension(0, px(150)));
+		xpScroll.setMaximumSize(dim(600, 200));
+		xpScroll.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(xpScroll);
 
-		add(Box.createVerticalStrut(8));
+		add(Box.createVerticalStrut(px(8)));
 
 		// === Loot Section ===
 		add(sectionHeader("Loot Log"));
 
 		JPanel lootSummaryRow = new JPanel(new BorderLayout());
 		lootSummaryRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		lootSummaryRow.setMaximumSize(new Dimension(600, 18));
+		lootSummaryRow.setMaximumSize(dim(600, 18));
 		JLabel dropsLabel = new JLabel("Drops:");
 		dropsLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		dropsLabel.setFont(dropsLabel.getFont().deriveFont(11f));
+		dropsLabel.setFont(dropsLabel.getFont().deriveFont(fontSize(11f)));
 		lootCountLabel.setForeground(Color.WHITE);
-		lootCountLabel.setFont(lootCountLabel.getFont().deriveFont(11f));
+		lootCountLabel.setFont(lootCountLabel.getFont().deriveFont(fontSize(11f)));
 		lootSummaryRow.add(dropsLabel, BorderLayout.WEST);
 		lootSummaryRow.add(lootCountLabel, BorderLayout.EAST);
 		add(lootSummaryRow);
 
-		add(Box.createVerticalStrut(4));
+		add(Box.createVerticalStrut(px(4)));
 
 		lootPanel = new JPanel();
 		lootPanel.setLayout(new BoxLayout(lootPanel, BoxLayout.Y_AXIS));
@@ -122,9 +124,9 @@ public class StatsPanel extends JPanel
 		JScrollPane lootScroll = new JScrollPane(lootPanel);
 		lootScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		lootScroll.setBorder(null);
-		lootScroll.setPreferredSize(new Dimension(0, 150));
-		lootScroll.setMaximumSize(new Dimension(600, 250));
-		lootScroll.getVerticalScrollBar().setUnitIncrement(16);
+		lootScroll.setPreferredSize(new Dimension(0, px(150)));
+		lootScroll.setMaximumSize(dim(600, 250));
+		lootScroll.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(lootScroll);
 
 		add(Box.createVerticalGlue());
@@ -182,18 +184,18 @@ public class StatsPanel extends JPanel
 
 				JPanel row = new JPanel(new BorderLayout());
 				row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				row.setMaximumSize(new Dimension(600, 20));
-				row.setBorder(new EmptyBorder(1, 4, 1, 4));
+				row.setMaximumSize(dim(600, 20));
+				row.setBorder(new EmptyBorder(px(1), px(4), px(1), px(4)));
 
 				JLabel skillLabel = new JLabel(capitalize(name));
 				skillLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				skillLabel.setFont(skillLabel.getFont().deriveFont(10f));
+				skillLabel.setFont(skillLabel.getFont().deriveFont(fontSize(10f)));
 				row.add(skillLabel, BorderLayout.WEST);
 
 				String xpText = String.format("+%,d (%,d/hr)", gained, xpPerHour);
 				JLabel xpLabel = new JLabel(xpText);
 				xpLabel.setForeground(new Color(76, 175, 80));
-				xpLabel.setFont(xpLabel.getFont().deriveFont(Font.PLAIN, 10f));
+				xpLabel.setFont(xpLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 				row.add(xpLabel, BorderLayout.EAST);
 
 				xpPanel.add(row);
@@ -206,7 +208,7 @@ public class StatsPanel extends JPanel
 		{
 			JLabel noXp = new JLabel("  No XP gained yet");
 			noXp.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			noXp.setFont(noXp.getFont().deriveFont(10f));
+			noXp.setFont(noXp.getFont().deriveFont(fontSize(10f)));
 			xpPanel.add(noXp);
 		}
 
@@ -227,7 +229,7 @@ public class StatsPanel extends JPanel
 		{
 			JLabel noLoot = new JLabel("  No loot received yet");
 			noLoot.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			noLoot.setFont(noLoot.getFont().deriveFont(10f));
+			noLoot.setFont(noLoot.getFont().deriveFont(fontSize(10f)));
 			lootPanel.add(noLoot);
 		}
 
@@ -242,13 +244,13 @@ public class StatsPanel extends JPanel
 	{
 		JPanel row = new JPanel(new BorderLayout());
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
-		row.setBorder(new EmptyBorder(1, 4, 1, 4));
+		row.setMaximumSize(dim(600, 20));
+		row.setBorder(new EmptyBorder(px(1), px(4), px(1), px(4)));
 
 		String npcName = String.valueOf(drop.getOrDefault("npcName", "Unknown"));
 		JLabel npcLabel = new JLabel(npcName);
 		npcLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		npcLabel.setFont(npcLabel.getFont().deriveFont(10f));
+		npcLabel.setFont(npcLabel.getFont().deriveFont(fontSize(10f)));
 		row.add(npcLabel, BorderLayout.WEST);
 
 		// Summarize items
@@ -278,7 +280,7 @@ public class StatsPanel extends JPanel
 
 			JLabel itemsLabel = new JLabel(sb.toString());
 			itemsLabel.setForeground(new Color(255, 193, 7));
-			itemsLabel.setFont(itemsLabel.getFont().deriveFont(Font.PLAIN, 10f));
+			itemsLabel.setFont(itemsLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 			row.add(itemsLabel, BorderLayout.EAST);
 		}
 
@@ -353,11 +355,11 @@ public class StatsPanel extends JPanel
 	{
 		JPanel header = new JPanel(new BorderLayout());
 		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setMaximumSize(new Dimension(600, 22));
+		header.setMaximumSize(dim(600, 22));
 		header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
 		JLabel label = new JLabel(title);
 		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+		label.setFont(label.getFont().deriveFont(Font.BOLD, fontSize(11f)));
 		header.add(label, BorderLayout.WEST);
 		return header;
 	}

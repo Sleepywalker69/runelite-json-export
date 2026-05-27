@@ -1,5 +1,7 @@
 package com.osrscompanion;
 
+import static com.osrscompanion.UiScale.*;
+
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Player;
@@ -63,18 +65,18 @@ public class OsrsCompanionPanel extends PluginPanel
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 12, 12, 12));
+		setBorder(new EmptyBorder(px(12), px(12), px(12), px(12)));
 
 		JPanel body = new JPanel();
 		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 		body.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		body.add(buildBrand());
-		body.add(Box.createVerticalStrut(14));
+		body.add(Box.createVerticalStrut(px(14)));
 		body.add(buildOpenButton());
-		body.add(Box.createVerticalStrut(16));
+		body.add(Box.createVerticalStrut(px(16)));
 		body.add(buildStatusBlock());
-		body.add(Box.createVerticalStrut(12));
+		body.add(Box.createVerticalStrut(px(12)));
 		body.add(buildHint());
 		body.add(Box.createVerticalGlue());
 
@@ -91,15 +93,15 @@ public class OsrsCompanionPanel extends PluginPanel
 
 	private JPanel buildBrand()
 	{
-		JPanel brand = new JPanel(new BorderLayout(10, 0));
+		JPanel brand = new JPanel(new BorderLayout(px(10), 0));
 		brand.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		brand.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(0, 0, 10, 0)
+			new EmptyBorder(0, 0, px(10), 0)
 		));
-		brand.setMaximumSize(new Dimension(Short.MAX_VALUE, 50));
+		brand.setMaximumSize(new Dimension(Short.MAX_VALUE, px(50)));
 
-		brand.add(new LogoBadge(32), BorderLayout.WEST);
+		brand.add(new LogoBadge(px(32)), BorderLayout.WEST);
 
 		JPanel titles = new JPanel();
 		titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
@@ -107,12 +109,12 @@ public class OsrsCompanionPanel extends PluginPanel
 
 		JLabel name = new JLabel("MCP Companion");
 		name.setForeground(Color.WHITE);
-		name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
+		name.setFont(name.getFont().deriveFont(Font.BOLD, fontSize(13f)));
 		name.setAlignmentX(0);
 
 		JLabel meta = new JLabel("Live game data &middot; port " + config.apiPort());
 		meta.setForeground(new Color(0x7a, 0x7a, 0x7a));
-		meta.setFont(meta.getFont().deriveFont(Font.PLAIN, 10f));
+		meta.setFont(meta.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		meta.setAlignmentX(0);
 
 		titles.add(name);
@@ -124,18 +126,18 @@ public class OsrsCompanionPanel extends PluginPanel
 	private JComponent buildOpenButton()
 	{
 		JButton open = new JButton("Open GUI");
-		open.setFont(open.getFont().deriveFont(Font.BOLD, 13f));
+		open.setFont(open.getFont().deriveFont(Font.BOLD, fontSize(13f)));
 		open.setForeground(new Color(0x1e, 0x1e, 0x1e));
 		open.setBackground(ColorScheme.BRAND_ORANGE);
 		open.setFocusPainted(false);
 		open.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createLineBorder(new Color(0xc4, 0x70, 0x08), 1),
-			new EmptyBorder(10, 14, 10, 14)
+			new EmptyBorder(px(10), px(14), px(10), px(14))
 		));
 		open.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		open.setAlignmentX(0);
-		open.setMaximumSize(new Dimension(Short.MAX_VALUE, 40));
-		open.setPreferredSize(new Dimension(200, 40));
+		open.setMaximumSize(new Dimension(Short.MAX_VALUE, px(40)));
+		open.setPreferredSize(dim(200, 40));
 
 		// Hover feedback
 		Color base   = ColorScheme.BRAND_ORANGE;
@@ -157,24 +159,24 @@ public class OsrsCompanionPanel extends PluginPanel
 		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		block.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createLineBorder(Color.BLACK, 1),
-			new EmptyBorder(10, 12, 10, 12)
+			new EmptyBorder(px(10), px(12), px(10), px(12))
 		));
 		block.setAlignmentX(0);
-		block.setMaximumSize(new Dimension(Short.MAX_VALUE, 200));
+		block.setMaximumSize(new Dimension(Short.MAX_VALUE, px(200)));
 
 		block.add(sectionTitle("Live status"));
-		block.add(Box.createVerticalStrut(6));
+		block.add(Box.createVerticalStrut(px(6)));
 
 		// API row gets a coloured dot prefix
-		JPanel apiRow = new JPanel(new BorderLayout(6, 0));
+		JPanel apiRow = new JPanel(new BorderLayout(px(6), 0));
 		apiRow.setOpaque(false);
-		apiRow.setMaximumSize(new Dimension(Short.MAX_VALUE, 18));
+		apiRow.setMaximumSize(new Dimension(Short.MAX_VALUE, px(18)));
 		JLabel apiKey = keyLabel("API server");
 		JPanel apiRight = new JPanel();
 		apiRight.setOpaque(false);
 		apiRight.setLayout(new BoxLayout(apiRight, BoxLayout.X_AXIS));
 		apiRight.add(apiDot);
-		apiRight.add(Box.createHorizontalStrut(5));
+		apiRight.add(Box.createHorizontalStrut(px(5)));
 		apiRight.add(apiValue);
 		apiRow.add(apiKey, BorderLayout.WEST);
 		apiRow.add(apiRight, BorderLayout.EAST);
@@ -190,12 +192,13 @@ public class OsrsCompanionPanel extends PluginPanel
 
 	private JComponent buildHint()
 	{
-		JLabel hint = new JLabel("<html><div style='color:#666;font-size:10px;line-height:1.5'>"
+		int fs = px(10);
+		JLabel hint = new JLabel("<html><div style='color:#666;font-size:" + fs + "px;line-height:1.5'>"
 			+ "All controls have moved to the GUI window.<br>"
 			+ "Click <b style='color:#ff981f'>Open GUI</b> above to launch it.</div></html>");
 		hint.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(1, 0, 0, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(10, 0, 0, 0)
+			new EmptyBorder(px(10), 0, 0, 0)
 		));
 		hint.setAlignmentX(0);
 		return hint;
@@ -283,8 +286,8 @@ public class OsrsCompanionPanel extends PluginPanel
 	{
 		JLabel l = new JLabel(text);
 		l.setForeground(ColorScheme.BRAND_ORANGE);
-		l.setFont(l.getFont().deriveFont(Font.BOLD, 10f));
-		l.setBorder(new EmptyBorder(0, 0, 4, 0));
+		l.setFont(l.getFont().deriveFont(Font.BOLD, fontSize(10f)));
+		l.setBorder(new EmptyBorder(0, 0, px(4), 0));
 		l.setAlignmentX(0);
 		return l;
 	}
@@ -293,7 +296,7 @@ public class OsrsCompanionPanel extends PluginPanel
 	{
 		JPanel row = new JPanel(new BorderLayout());
 		row.setOpaque(false);
-		row.setMaximumSize(new Dimension(Short.MAX_VALUE, 18));
+		row.setMaximumSize(new Dimension(Short.MAX_VALUE, px(18)));
 		row.add(keyLabel(key), BorderLayout.WEST);
 		row.add(value, BorderLayout.EAST);
 		return row;
@@ -303,7 +306,7 @@ public class OsrsCompanionPanel extends PluginPanel
 	{
 		JLabel l = new JLabel(text);
 		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+		l.setFont(l.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		return l;
 	}
 
@@ -311,7 +314,7 @@ public class OsrsCompanionPanel extends PluginPanel
 	{
 		JLabel l = new JLabel(text);
 		l.setForeground(Color.WHITE);
-		l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+		l.setFont(l.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		return l;
 	}
 
@@ -324,17 +327,18 @@ public class OsrsCompanionPanel extends PluginPanel
 		private Color color = new Color(0x66, 0x66, 0x66);
 		StateDot()
 		{
-			Dimension d = new Dimension(8, 8);
+			Dimension d = dim(8, 8);
 			setPreferredSize(d); setMinimumSize(d); setMaximumSize(d);
 		}
 		void setColor(Color c) { this.color = c; repaint(); }
 		@Override
 		protected void paintComponent(Graphics g)
 		{
+			int s = getWidth();
 			Graphics2D g2 = (Graphics2D) g.create();
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			g2.setColor(color);
-			g2.fillOval(0, getHeight() / 2 - 4, 8, 8);
+			g2.fillOval(0, getHeight() / 2 - s / 2, s, s);
 			g2.dispose();
 		}
 	}

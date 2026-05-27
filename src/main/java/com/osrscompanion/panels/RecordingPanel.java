@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.GameStateServer;
 import com.osrscompanion.OsrsCompanionPlugin;
 import net.runelite.client.ui.ColorScheme;
@@ -67,7 +69,7 @@ public class RecordingPanel extends JPanel
 		this.plugin = plugin;
 		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// === Controls ===
 		add(sectionHeader("Controls"));
@@ -75,79 +77,79 @@ public class RecordingPanel extends JPanel
 		// Duration
 		JPanel durationRow = new JPanel(new BorderLayout());
 		durationRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		durationRow.setMaximumSize(new Dimension(600, 26));
+		durationRow.setMaximumSize(dim(600, 26));
 		JLabel durLabel = new JLabel("Duration (sec):");
 		durLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		durLabel.setFont(durLabel.getFont().deriveFont(11f));
+		durLabel.setFont(durLabel.getFont().deriveFont(fontSize(11f)));
 		durationSpinner = new JSpinner(new SpinnerNumberModel(180, 30, 600, 30));
-		durationSpinner.setPreferredSize(new Dimension(70, 22));
+		durationSpinner.setPreferredSize(dim(70, 22));
 		durationRow.add(durLabel, BorderLayout.WEST);
 		durationRow.add(durationSpinner, BorderLayout.EAST);
 		add(durationRow);
 
-		add(Box.createVerticalStrut(4));
+		add(Box.createVerticalStrut(px(4)));
 
 		// Start/Stop button
-		toggleButton.setFont(toggleButton.getFont().deriveFont(Font.BOLD, 12f));
+		toggleButton.setFont(toggleButton.getFont().deriveFont(Font.BOLD, fontSize(12f)));
 		toggleButton.setFocusPainted(false);
 		toggleButton.setBackground(new Color(76, 175, 80));
 		toggleButton.setForeground(Color.WHITE);
-		toggleButton.setMaximumSize(new Dimension(600, 32));
+		toggleButton.setMaximumSize(dim(600, 32));
 		toggleButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		toggleButton.addActionListener(e -> toggleRecording());
 		add(toggleButton);
 
-		add(Box.createVerticalStrut(8));
+		add(Box.createVerticalStrut(px(8)));
 
 		// === Status ===
 		add(sectionHeader("Status"));
 		statusLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		statusLabel.setFont(statusLabel.getFont().deriveFont(11f));
+		statusLabel.setFont(statusLabel.getFont().deriveFont(fontSize(11f)));
 		statusLabel.setAlignmentX(LEFT_ALIGNMENT);
 		add(statusLabel);
 
 		eventsLabel.setForeground(Color.WHITE);
-		eventsLabel.setFont(eventsLabel.getFont().deriveFont(11f));
+		eventsLabel.setFont(eventsLabel.getFont().deriveFont(fontSize(11f)));
 		eventsLabel.setAlignmentX(LEFT_ALIGNMENT);
 		add(eventsLabel);
 
 		timeLabel.setForeground(Color.WHITE);
-		timeLabel.setFont(timeLabel.getFont().deriveFont(11f));
+		timeLabel.setFont(timeLabel.getFont().deriveFont(fontSize(11f)));
 		timeLabel.setAlignmentX(LEFT_ALIGNMENT);
 		add(timeLabel);
 
-		add(Box.createVerticalStrut(2));
-		progressBar.setMaximumSize(new Dimension(600, 14));
+		add(Box.createVerticalStrut(px(2)));
+		progressBar.setMaximumSize(dim(600, 14));
 		progressBar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		progressBar.setForeground(ColorScheme.BRAND_ORANGE);
 		progressBar.setBorderPainted(false);
 		progressBar.setStringPainted(true);
-		progressBar.setFont(progressBar.getFont().deriveFont(9f));
+		progressBar.setFont(progressBar.getFont().deriveFont(fontSize(9f)));
 		add(progressBar);
 
-		add(Box.createVerticalStrut(8));
+		add(Box.createVerticalStrut(px(8)));
 
 		// === Presets ===
 		add(sectionHeader("Event Presets"));
-		JPanel presetRow = new JPanel(new GridLayout(2, 3, 2, 2));
+		JPanel presetRow = new JPanel(new GridLayout(2, 3, px(2), px(2)));
 		presetRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		presetRow.setMaximumSize(new Dimension(600, 50));
+		presetRow.setMaximumSize(dim(600, 50));
 
 		for (String preset : PRESETS.keySet())
 		{
 			JButton btn = new JButton(preset);
-			btn.setFont(btn.getFont().deriveFont(Font.PLAIN, 9f));
+			btn.setFont(btn.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 			btn.setFocusPainted(false);
 			btn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 			btn.setForeground(Color.WHITE);
-			btn.setBorder(new EmptyBorder(2, 4, 2, 4));
+			btn.setBorder(new EmptyBorder(px(2), px(4), px(2), px(4)));
 			btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			btn.addActionListener(e -> applyPreset(preset));
 			presetRow.add(btn);
 		}
 		add(presetRow);
 
-		add(Box.createVerticalStrut(8));
+		add(Box.createVerticalStrut(px(8)));
 
 		// === Event Types ===
 		add(sectionHeader("Event Types"));
@@ -158,7 +160,7 @@ public class RecordingPanel extends JPanel
 		for (String type : ALL_EVENT_TYPES)
 		{
 			JCheckBox cb = new JCheckBox(type, true);
-			cb.setFont(cb.getFont().deriveFont(Font.PLAIN, 10f));
+			cb.setFont(cb.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 			cb.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			cb.setBackground(ColorScheme.DARK_GRAY_COLOR);
 			cb.setFocusPainted(false);
@@ -169,42 +171,42 @@ public class RecordingPanel extends JPanel
 		JScrollPane checkScroll = new JScrollPane(checkboxPanel);
 		checkScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		checkScroll.setBorder(null);
-		checkScroll.setPreferredSize(new Dimension(0, 160));
-		checkScroll.setMaximumSize(new Dimension(600, 160));
-		checkScroll.getVerticalScrollBar().setUnitIncrement(16);
+		checkScroll.setPreferredSize(new Dimension(0, px(160)));
+		checkScroll.setMaximumSize(dim(600, 160));
+		checkScroll.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(checkScroll);
 
-		add(Box.createVerticalStrut(10));
+		add(Box.createVerticalStrut(px(10)));
 
 		// === Recorded Events Viewer ===
 		add(sectionHeader("Recorded Events"));
 
-		JPanel eventsControlRow = new JPanel(new BorderLayout(4, 0));
+		JPanel eventsControlRow = new JPanel(new BorderLayout(px(4), 0));
 		eventsControlRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		eventsControlRow.setMaximumSize(new Dimension(600, 26));
+		eventsControlRow.setMaximumSize(dim(600, 26));
 
 		JButton viewEventsBtn = new JButton("Load Events");
-		viewEventsBtn.setFont(viewEventsBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		viewEventsBtn.setFont(viewEventsBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		viewEventsBtn.setFocusPainted(false);
 		viewEventsBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		viewEventsBtn.setForeground(Color.WHITE);
-		viewEventsBtn.setBorder(new EmptyBorder(2, 8, 2, 8));
+		viewEventsBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
 		viewEventsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		viewEventsBtn.addActionListener(e -> loadRecordedEvents());
 		eventsControlRow.add(viewEventsBtn, BorderLayout.WEST);
 
 		JButton copyEventsBtn = new JButton("Copy All");
-		copyEventsBtn.setFont(copyEventsBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		copyEventsBtn.setFont(copyEventsBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		copyEventsBtn.setFocusPainted(false);
 		copyEventsBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		copyEventsBtn.setForeground(Color.WHITE);
-		copyEventsBtn.setBorder(new EmptyBorder(2, 8, 2, 8));
+		copyEventsBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
 		copyEventsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		copyEventsBtn.addActionListener(e -> copyRecordedEvents());
 		eventsControlRow.add(copyEventsBtn, BorderLayout.EAST);
 
 		add(eventsControlRow);
-		add(Box.createVerticalStrut(4));
+		add(Box.createVerticalStrut(px(4)));
 
 		eventsPanel = new JPanel();
 		eventsPanel.setLayout(new BoxLayout(eventsPanel, BoxLayout.Y_AXIS));
@@ -213,13 +215,13 @@ public class RecordingPanel extends JPanel
 		JScrollPane eventsScroll = new JScrollPane(eventsPanel);
 		eventsScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		eventsScroll.setBorder(null);
-		eventsScroll.setPreferredSize(new Dimension(0, 200));
-		eventsScroll.setMaximumSize(new Dimension(600, 300));
-		eventsScroll.getVerticalScrollBar().setUnitIncrement(16);
+		eventsScroll.setPreferredSize(new Dimension(0, px(200)));
+		eventsScroll.setMaximumSize(dim(600, 300));
+		eventsScroll.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(eventsScroll);
 
 		eventsFooterLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		eventsFooterLabel.setFont(eventsFooterLabel.getFont().deriveFont(Font.PLAIN, 10f));
+		eventsFooterLabel.setFont(eventsFooterLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		eventsFooterLabel.setAlignmentX(LEFT_ALIGNMENT);
 		add(eventsFooterLabel);
 
@@ -380,17 +382,17 @@ public class RecordingPanel extends JPanel
 
 			JPanel row = new JPanel(new BorderLayout());
 			row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			row.setMaximumSize(new Dimension(600, 20));
-			row.setBorder(new EmptyBorder(1, 4, 1, 4));
+			row.setMaximumSize(dim(600, 20));
+			row.setBorder(new EmptyBorder(px(1), px(4), px(1), px(4)));
 
 			JLabel tickLabel = new JLabel("[" + tick + "] ");
 			tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, 9f));
+			tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 			row.add(tickLabel, BorderLayout.WEST);
 
 			JLabel summaryLabel = new JLabel(summary);
 			summaryLabel.setForeground(getEventColor(type));
-			summaryLabel.setFont(summaryLabel.getFont().deriveFont(Font.PLAIN, 10f));
+			summaryLabel.setFont(summaryLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 			summaryLabel.setToolTipText(type + ": " + evt.toString());
 			row.add(summaryLabel, BorderLayout.CENTER);
 
@@ -499,11 +501,11 @@ public class RecordingPanel extends JPanel
 	{
 		JPanel header = new JPanel(new BorderLayout());
 		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setMaximumSize(new Dimension(600, 22));
+		header.setMaximumSize(dim(600, 22));
 		header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
 		JLabel label = new JLabel(title);
 		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+		label.setFont(label.getFont().deriveFont(Font.BOLD, fontSize(11f)));
 		header.add(label, BorderLayout.WEST);
 		return header;
 	}

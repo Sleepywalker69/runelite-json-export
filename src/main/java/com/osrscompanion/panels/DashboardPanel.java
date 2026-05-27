@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.GameStateServer;
 import com.osrscompanion.OsrsCompanionConfig;
 import com.osrscompanion.OsrsCompanionPlugin;
@@ -55,10 +57,10 @@ public class DashboardPanel extends JPanel
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// Two-column layout for wider windows
-		JPanel columns = new JPanel(new GridLayout(1, 2, 24, 0));
+		JPanel columns = new JPanel(new GridLayout(1, 2, px(24), 0));
 		columns.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		// === Left Column: Player Vitals ===
@@ -71,13 +73,13 @@ public class DashboardPanel extends JPanel
 		leftCol.add(labelRow("World:", worldLabel));
 		leftCol.add(labelRow("Combat:", combatLabel));
 		leftCol.add(labelRow("Position:", positionLabel));
-		leftCol.add(Box.createVerticalStrut(6));
+		leftCol.add(Box.createVerticalStrut(px(6)));
 		leftCol.add(hpBar);
-		leftCol.add(Box.createVerticalStrut(3));
+		leftCol.add(Box.createVerticalStrut(px(3)));
 		leftCol.add(prayerBar);
-		leftCol.add(Box.createVerticalStrut(3));
+		leftCol.add(Box.createVerticalStrut(px(3)));
 		leftCol.add(runBar);
-		leftCol.add(Box.createVerticalStrut(3));
+		leftCol.add(Box.createVerticalStrut(px(3)));
 		leftCol.add(specBar);
 		leftCol.add(Box.createVerticalGlue());
 
@@ -90,7 +92,7 @@ public class DashboardPanel extends JPanel
 		rightCol.add(labelRow("Status:", apiStatusLabel));
 		rightCol.add(labelRow("SSE Clients:", sseClientsLabel));
 
-		rightCol.add(Box.createVerticalStrut(10));
+		rightCol.add(Box.createVerticalStrut(px(10)));
 
 		rightCol.add(sectionHeader("Session"));
 		rightCol.add(labelRow("Uptime:", sessionTimeLabel));
@@ -98,12 +100,12 @@ public class DashboardPanel extends JPanel
 		rightCol.add(labelRow("Tick Buffer:", tickBufferLabel));
 		rightCol.add(labelRow("Actions:", actionBufferLabel));
 
-		rightCol.add(Box.createVerticalStrut(10));
+		rightCol.add(Box.createVerticalStrut(px(10)));
 
 		rightCol.add(sectionHeader("Quick Actions"));
-		JPanel buttonRow = new JPanel(new GridLayout(1, 3, 4, 0));
+		JPanel buttonRow = new JPanel(new GridLayout(1, 3, px(4), 0));
 		buttonRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		buttonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+		buttonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(28)));
 
 		JButton saveBtn = actionButton("Save");
 		saveBtn.addActionListener(e -> plugin.triggerSave());
@@ -262,7 +264,7 @@ public class DashboardPanel extends JPanel
 	{
 		JLabel label = new JLabel(text);
 		label.setForeground(Color.WHITE);
-		label.setFont(label.getFont().deriveFont(Font.PLAIN, 11f));
+		label.setFont(label.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		return label;
 	}
 
@@ -270,11 +272,11 @@ public class DashboardPanel extends JPanel
 	{
 		JPanel row = new JPanel(new BorderLayout());
 		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		row.setMaximumSize(new Dimension(600, 18));
+		row.setMaximumSize(dim(600, 18));
 
 		JLabel keyLabel = new JLabel(labelText);
 		keyLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		keyLabel.setFont(keyLabel.getFont().deriveFont(Font.PLAIN, 11f));
+		keyLabel.setFont(keyLabel.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		row.add(keyLabel, BorderLayout.WEST);
 		row.add(valueLabel, BorderLayout.EAST);
 		return row;
@@ -284,12 +286,12 @@ public class DashboardPanel extends JPanel
 	{
 		JPanel header = new JPanel(new BorderLayout());
 		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setMaximumSize(new Dimension(600, 22));
+		header.setMaximumSize(dim(600, 22));
 		header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
 
 		JLabel label = new JLabel(title);
 		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+		label.setFont(label.getFont().deriveFont(Font.BOLD, fontSize(11f)));
 		header.add(label, BorderLayout.WEST);
 
 		return header;
@@ -298,13 +300,13 @@ public class DashboardPanel extends JPanel
 	private static JButton actionButton(String text)
 	{
 		JButton btn = new JButton(text);
-		btn.setFont(btn.getFont().deriveFont(Font.PLAIN, 10f));
+		btn.setFont(btn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		btn.setFocusPainted(false);
 		btn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		btn.setForeground(Color.WHITE);
 		btn.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1),
-			new EmptyBorder(3, 6, 3, 6)
+			new EmptyBorder(px(3), px(6), px(3), px(6))
 		));
 		btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		return btn;
@@ -330,12 +332,12 @@ public class DashboardPanel extends JPanel
 
 			setLayout(new BorderLayout());
 			setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			setMaximumSize(new Dimension(600, 16));
-			setPreferredSize(new Dimension(0, 16));
+			setMaximumSize(dim(600, 16));
+			setPreferredSize(new Dimension(0, px(16)));
 
 			textLabel = new JLabel(prefix + ": 0/0");
 			textLabel.setForeground(Color.WHITE);
-			textLabel.setFont(textLabel.getFont().deriveFont(Font.PLAIN, 10f));
+			textLabel.setFont(textLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 			textLabel.setHorizontalAlignment(SwingConstants.CENTER);
 			add(textLabel, BorderLayout.CENTER);
 		}

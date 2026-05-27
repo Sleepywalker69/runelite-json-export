@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.OsrsCompanionPlugin;
 import com.osrscompanion.TickStateBuffer;
 import net.runelite.client.ui.ColorScheme;
@@ -36,7 +38,7 @@ public class TickBufferPanel extends JPanel
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// === Controls ===
 		JPanel controlPanel = new JPanel();
@@ -46,20 +48,20 @@ public class TickBufferPanel extends JPanel
 		// Tick count
 		JPanel tickRow = new JPanel(new BorderLayout());
 		tickRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		tickRow.setMaximumSize(new Dimension(600, 24));
+		tickRow.setMaximumSize(dim(600, 24));
 		JLabel tickLabel = new JLabel("Last N ticks:");
 		tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		tickLabel.setFont(tickLabel.getFont().deriveFont(11f));
+		tickLabel.setFont(tickLabel.getFont().deriveFont(fontSize(11f)));
 		tickCountSpinner = new JSpinner(new SpinnerNumberModel(10, 2, 100, 5));
-		tickCountSpinner.setPreferredSize(new Dimension(60, 22));
+		tickCountSpinner.setPreferredSize(dim(60, 22));
 		tickRow.add(tickLabel, BorderLayout.WEST);
 		tickRow.add(tickCountSpinner, BorderLayout.EAST);
 		controlPanel.add(tickRow);
 
 		// Entity type filters
-		JPanel filterRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+		JPanel filterRow = new JPanel(new FlowLayout(FlowLayout.LEFT, px(4), px(2)));
 		filterRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		filterRow.setMaximumSize(new Dimension(600, 24));
+		filterRow.setMaximumSize(dim(600, 24));
 
 		showNpcs = checkbox("NPCs", true);
 		showPlayers = checkbox("Players", true);
@@ -74,16 +76,16 @@ public class TickBufferPanel extends JPanel
 
 		// Refresh button
 		JButton refreshBtn = new JButton("Refresh");
-		refreshBtn.setFont(refreshBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		refreshBtn.setFont(refreshBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		refreshBtn.setFocusPainted(false);
 		refreshBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		refreshBtn.setForeground(Color.WHITE);
-		refreshBtn.setMaximumSize(new Dimension(600, 24));
+		refreshBtn.setMaximumSize(dim(600, 24));
 		refreshBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		refreshBtn.addActionListener(e -> refresh());
 		controlPanel.add(refreshBtn);
 
-		controlPanel.add(Box.createVerticalStrut(4));
+		controlPanel.add(Box.createVerticalStrut(px(4)));
 		add(controlPanel, BorderLayout.NORTH);
 
 		// === Delta Display ===
@@ -94,13 +96,13 @@ public class TickBufferPanel extends JPanel
 		JScrollPane scrollPane = new JScrollPane(deltaPanel);
 		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		scrollPane.setBorder(null);
-		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(scrollPane, BorderLayout.CENTER);
 
 		// === Footer ===
 		footerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, 10f));
-		footerLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
+		footerLabel.setBorder(new EmptyBorder(px(4), 0, 0, 0));
 		add(footerLabel, BorderLayout.SOUTH);
 	}
 
@@ -126,7 +128,7 @@ public class TickBufferPanel extends JPanel
 		{
 			JLabel noData = new JLabel("  Need at least 2 ticks of data");
 			noData.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			noData.setFont(noData.getFont().deriveFont(10f));
+			noData.setFont(noData.getFont().deriveFont(fontSize(10f)));
 			deltaPanel.add(noData);
 			footerLabel.setText(buffer.filled() + " / " + buffer.capacity() + " ticks buffered");
 			deltaPanel.revalidate();
@@ -230,7 +232,7 @@ public class TickBufferPanel extends JPanel
 		{
 			JLabel noChanges = new JLabel("  No changes in last " + count + " ticks");
 			noChanges.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			noChanges.setFont(noChanges.getFont().deriveFont(10f));
+			noChanges.setFont(noChanges.getFont().deriveFont(fontSize(10f)));
 			deltaPanel.add(noChanges);
 		}
 
@@ -336,16 +338,16 @@ public class TickBufferPanel extends JPanel
 	{
 		JPanel row = new JPanel(new BorderLayout());
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setMaximumSize(new Dimension(600, 18));
-		row.setBorder(new EmptyBorder(1, 4, 1, 4));
+		row.setMaximumSize(dim(600, 18));
+		row.setBorder(new EmptyBorder(px(1), px(4), px(1), px(4)));
 
 		JLabel tickLabel = new JLabel("[" + tick + "] ");
 		tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, 9f));
+		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 
 		JLabel markerLabel = new JLabel(marker + " ");
 		markerLabel.setForeground(color);
-		markerLabel.setFont(markerLabel.getFont().deriveFont(Font.BOLD, 10f));
+		markerLabel.setFont(markerLabel.getFont().deriveFont(Font.BOLD, fontSize(10f)));
 
 		JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 		leftPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -356,7 +358,7 @@ public class TickBufferPanel extends JPanel
 		String displayText = text.length() > 70 ? text.substring(0, 67) + "..." : text;
 		JLabel textLabel = new JLabel(displayText);
 		textLabel.setForeground(color);
-		textLabel.setFont(textLabel.getFont().deriveFont(Font.PLAIN, 10f));
+		textLabel.setFont(textLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		textLabel.setToolTipText(text);
 		row.add(textLabel, BorderLayout.CENTER);
 
@@ -376,7 +378,7 @@ public class TickBufferPanel extends JPanel
 	private static JCheckBox checkbox(String label, boolean selected)
 	{
 		JCheckBox cb = new JCheckBox(label, selected);
-		cb.setFont(cb.getFont().deriveFont(Font.PLAIN, 9f));
+		cb.setFont(cb.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 		cb.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		cb.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		cb.setFocusPainted(false);

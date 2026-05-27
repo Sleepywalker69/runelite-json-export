@@ -47,24 +47,25 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static com.osrscompanion.UiScale.*;
+
 /**
  * Standalone GUI window for the OSRS MCP Companion plugin.
  *
  * Layout (BorderLayout):
  *   NORTH  - header bar (logo + title + live status pills)
- *   WEST   - vertical nav rail with the 7 sub-panel tabs
+ *   WEST   - vertical nav rail with the 8 sub-panel tabs
  *   CENTER - CardLayout swapping between the existing panel classes
  *   SOUTH  - status bar (player / tick / save state)
  *
- * The frame REUSES the sub-panel classes from com.osrscompanion.panels so
- * behaviour stays identical to the sidebar version.
+ * All sizes are DPI-scaled via {@link UiScale}.
  *
  * Designed for JDK 11.
  */
 public class OsrsCompanionFrame extends JFrame
 {
-	private static final Dimension DEFAULT_SIZE = new Dimension(1100, 720);
-	private static final Dimension MIN_SIZE = new Dimension(880, 560);
+	private static final Dimension DEFAULT_SIZE = dim(1100, 720);
+	private static final Dimension MIN_SIZE = dim(880, 560);
 
 	// Tab identifiers — order = display order in the nav rail.
 	private static final String TAB_DASHBOARD = "Dashboard";
@@ -129,7 +130,6 @@ public class OsrsCompanionFrame extends JFrame
 		}
 		catch (Throwable ignored)
 		{
-			// In headless tests ClientUI may not be initialised — fall back to the plugin icon.
 			try
 			{
 				setIconImage(ImageUtil.loadImageResource(OsrsCompanionFrame.class, "/icon.png"));
@@ -252,16 +252,16 @@ public class OsrsCompanionFrame extends JFrame
 		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		header.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, Color.BLACK),
-			new EmptyBorder(8, 16, 8, 16)
+			new EmptyBorder(px(8), px(16), px(8), px(16))
 		));
-		header.setPreferredSize(new Dimension(0, 56));
+		header.setPreferredSize(new Dimension(0, px(56)));
 
 		JPanel left = new JPanel();
 		left.setLayout(new BoxLayout(left, BoxLayout.X_AXIS));
 		left.setOpaque(false);
 
-		left.add(new LogoBadge(36));
-		left.add(Box.createHorizontalStrut(12));
+		left.add(new LogoBadge(px(36)));
+		left.add(Box.createHorizontalStrut(px(12)));
 
 		JPanel titles = new JPanel();
 		titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
@@ -269,12 +269,12 @@ public class OsrsCompanionFrame extends JFrame
 
 		JLabel title = new JLabel("OSRS MCP Companion");
 		title.setForeground(Color.WHITE);
-		title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
+		title.setFont(title.getFont().deriveFont(Font.BOLD, fontSize(14f)));
 		title.setAlignmentX(0);
 
 		JLabel sub = new JLabel("Live game data & recording bridge");
 		sub.setForeground(new Color(0x88, 0x88, 0x88));
-		sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 11f));
+		sub.setFont(sub.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		sub.setAlignmentX(0);
 
 		titles.add(title);
@@ -285,9 +285,9 @@ public class OsrsCompanionFrame extends JFrame
 		right.setLayout(new BoxLayout(right, BoxLayout.X_AXIS));
 		right.setOpaque(false);
 		right.add(apiPill);
-		right.add(Box.createHorizontalStrut(8));
+		right.add(Box.createHorizontalStrut(px(8)));
 		right.add(connPill);
-		right.add(Box.createHorizontalStrut(8));
+		right.add(Box.createHorizontalStrut(px(8)));
 		right.add(timePill);
 
 		header.add(left,  BorderLayout.WEST);
@@ -305,9 +305,9 @@ public class OsrsCompanionFrame extends JFrame
 		nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
 		nav.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		nav.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Color.BLACK));
-		nav.setPreferredSize(new Dimension(168, 0));
+		nav.setPreferredSize(new Dimension(px(168), 0));
 
-		nav.add(Box.createVerticalStrut(8));
+		nav.add(Box.createVerticalStrut(px(8)));
 		for (String name : TAB_ORDER)
 		{
 			NavItem item = new NavItem(name, glyphFor(name));
@@ -321,9 +321,10 @@ public class OsrsCompanionFrame extends JFrame
 		}
 		nav.add(Box.createVerticalGlue());
 
-		JLabel foot = new JLabel("<html><div style='color:#5e5e5e;font-size:9px;line-height:1.4'>"
+		int footFontPx = Math.max(9, px(9));
+		JLabel foot = new JLabel("<html><div style='color:#5e5e5e;font-size:" + footFontPx + "px;line-height:1.4'>"
 			+ "jdk &middot; 11<br>~/.runelite/osrs-companion</div></html>");
-		foot.setBorder(new EmptyBorder(10, 14, 10, 14));
+		foot.setBorder(new EmptyBorder(px(10), px(14), px(10), px(14)));
 		foot.setAlignmentX(0);
 		nav.add(foot);
 
@@ -356,9 +357,9 @@ public class OsrsCompanionFrame extends JFrame
 		footer.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		footer.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(1, 0, 0, 0, Color.BLACK),
-			new EmptyBorder(4, 14, 4, 14)
+			new EmptyBorder(px(4), px(14), px(4), px(14))
 		));
-		footer.setPreferredSize(new Dimension(0, 26));
+		footer.setPreferredSize(new Dimension(0, px(26)));
 
 		footer.add(footerPlayer);
 		footer.add(sep());
@@ -379,7 +380,7 @@ public class OsrsCompanionFrame extends JFrame
 	{
 		JLabel l = new JLabel("  |  ");
 		l.setForeground(new Color(0x44, 0x44, 0x44));
-		l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+		l.setFont(l.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		return l;
 	}
 
@@ -387,7 +388,7 @@ public class OsrsCompanionFrame extends JFrame
 	{
 		JLabel l = new JLabel(s);
 		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+		l.setFont(l.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 		return l;
 	}
 
@@ -409,7 +410,7 @@ public class OsrsCompanionFrame extends JFrame
 
 	private void installShortcuts(JComponent root)
 	{
-		// Ctrl/Cmd+1..7 jumps tabs; Esc closes window.
+		// Ctrl/Cmd+1..8 jumps tabs; Esc closes window.
 		int mask = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
 		for (int i = 0; i < TAB_ORDER.length; i++)
 		{
@@ -499,9 +500,9 @@ public class OsrsCompanionFrame extends JFrame
 		if (lastSave > 0)
 		{
 			long ago = (System.currentTimeMillis() - lastSave) / 1000;
-			if (ago < 60)        footerSave.setText("\u2713 Saved " + ago + "s ago");
-			else if (ago < 3600) footerSave.setText("\u2713 Saved " + (ago / 60) + "m ago");
-			else                 footerSave.setText("\u2713 Saved " + (ago / 3600) + "h ago");
+			if (ago < 60)        footerSave.setText("✓ Saved " + ago + "s ago");
+			else if (ago < 3600) footerSave.setText("✓ Saved " + (ago / 60) + "m ago");
+			else                 footerSave.setText("✓ Saved " + (ago / 3600) + "h ago");
 			footerSave.setForeground(new Color(0x4c, 0xaf, 0x50));
 		}
 		else
@@ -525,15 +526,15 @@ public class OsrsCompanionFrame extends JFrame
 
 		StatusPill(String initial)
 		{
-			setLayout(new BorderLayout(6, 0));
+			setLayout(new BorderLayout(px(6), 0));
 			setOpaque(false);
-			setBorder(new EmptyBorder(4, 10, 4, 12));
-			setMaximumSize(new Dimension(220, 26));
-			setPreferredSize(new Dimension(150, 26));
+			setBorder(new EmptyBorder(px(4), px(10), px(4), px(12)));
+			setMaximumSize(dim(220, 30));
+			setPreferredSize(dim(160, 30));
 
 			text = new JLabel(initial);
 			text.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			text.setFont(text.getFont().deriveFont(Font.PLAIN, 11f));
+			text.setFont(text.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
 			add(new DotIcon(this::currentDotColor), BorderLayout.WEST);
 			add(text, BorderLayout.CENTER);
 		}
@@ -561,9 +562,9 @@ public class OsrsCompanionFrame extends JFrame
 			Graphics2D g2 = (Graphics2D) g.create();
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			g2.setColor(ColorScheme.DARK_GRAY_COLOR);
-			g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+			g2.fillRoundRect(0, 0, getWidth(), getHeight(), px(14), px(14));
 			g2.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
-			g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+			g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, px(14), px(14));
 			g2.dispose();
 			super.paintComponent(g);
 		}
@@ -576,7 +577,8 @@ public class OsrsCompanionFrame extends JFrame
 		DotIcon(java.util.function.Supplier<Color> color)
 		{
 			this.color = color;
-			setPreferredSize(new Dimension(10, 10));
+			Dimension d = dim(10, 10);
+			setPreferredSize(d);
 		}
 		@Override
 		protected void paintComponent(Graphics g)
@@ -609,9 +611,9 @@ public class OsrsCompanionFrame extends JFrame
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			int w = getWidth(), h = getHeight();
 			g2.setColor(new Color(0xff, 0x98, 0x1f));
-			g2.fillRoundRect(0, 0, w, h, 8, 8);
+			g2.fillRoundRect(0, 0, w, h, px(8), px(8));
 			g2.setColor(new Color(0xc4, 0x70, 0x08));
-			g2.drawRoundRect(0, 0, w - 1, h - 1, 8, 8);
+			g2.drawRoundRect(0, 0, w - 1, h - 1, px(8), px(8));
 			g2.setColor(new Color(0x1e, 0x1e, 0x1e));
 			g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, (int) (h * 0.55f)));
 			java.awt.FontMetrics fm = g2.getFontMetrics();
@@ -632,18 +634,18 @@ public class OsrsCompanionFrame extends JFrame
 
 		NavItem(String text, GlyphIcon glyph)
 		{
-			setLayout(new BorderLayout(10, 0));
+			setLayout(new BorderLayout(px(10), 0));
 			setOpaque(true);
 			setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			setBorder(new EmptyBorder(8, 14, 8, 12));
-			setMaximumSize(new Dimension(Short.MAX_VALUE, 36));
-			setPreferredSize(new Dimension(168, 36));
+			setBorder(new EmptyBorder(px(8), px(14), px(8), px(12)));
+			setMaximumSize(new Dimension(Short.MAX_VALUE, px(40)));
+			setPreferredSize(dim(168, 40));
 			setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
 			this.icon = glyph;
 			this.label = new JLabel(text);
 			label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			label.setFont(label.getFont().deriveFont(Font.PLAIN, 12f));
+			label.setFont(label.getFont().deriveFont(Font.PLAIN, fontSize(12f)));
 
 			add(icon, BorderLayout.WEST);
 			add(label, BorderLayout.CENTER);
@@ -674,14 +676,14 @@ public class OsrsCompanionFrame extends JFrame
 			{
 				setBackground(ColorScheme.DARK_GRAY_COLOR);
 				label.setForeground(Color.WHITE);
-				label.setFont(label.getFont().deriveFont(Font.BOLD, 12f));
+				label.setFont(label.getFont().deriveFont(Font.BOLD, fontSize(12f)));
 				icon.setActive(true);
 			}
 			else
 			{
 				setBackground(ColorScheme.DARKER_GRAY_COLOR);
 				label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				label.setFont(label.getFont().deriveFont(Font.PLAIN, 12f));
+				label.setFont(label.getFont().deriveFont(Font.PLAIN, fontSize(12f)));
 				icon.setActive(false);
 			}
 			repaint();
@@ -695,7 +697,7 @@ public class OsrsCompanionFrame extends JFrame
 			{
 				Graphics2D g2 = (Graphics2D) g.create();
 				g2.setColor(new Color(0xff, 0x98, 0x1f));
-				g2.fillRect(0, 0, 3, getHeight());
+				g2.fillRect(0, 0, px(3), getHeight());
 				g2.dispose();
 			}
 		}
@@ -731,7 +733,7 @@ public class OsrsCompanionFrame extends JFrame
 		GlyphIcon(Kind kind)
 		{
 			this.kind = kind;
-			Dimension d = new Dimension(20, 20);
+			Dimension d = dim(20, 20);
 			setPreferredSize(d);
 			setMinimumSize(d);
 			setMaximumSize(d);
@@ -745,16 +747,15 @@ public class OsrsCompanionFrame extends JFrame
 			Graphics2D g2 = (Graphics2D) g.create();
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			g2.setColor(active ? new Color(0xff, 0x98, 0x1f) : ColorScheme.LIGHT_GRAY_COLOR);
-			g2.setStroke(new BasicStroke(1.6f));
+			g2.setStroke(new BasicStroke(1.6f * SCALE));
 
 			int w = getWidth(), h = getHeight();
-			int p = 3; // padding
+			int p = (int) (3 * SCALE); // padding
 			int x = p, y = p, iw = w - 2 * p, ih = h - 2 * p;
 
 			switch (kind)
 			{
 				case DASH:
-					// 2x2 squares (dashboard tiles)
 					int cell = (iw - 2) / 2;
 					g2.drawRect(x, y, cell, cell);
 					g2.drawRect(x + cell + 2, y, cell, cell);
@@ -762,24 +763,20 @@ public class OsrsCompanionFrame extends JFrame
 					g2.drawRect(x + cell + 2, y + cell + 2, cell, cell);
 					break;
 				case REC:
-					// filled circle (record dot)
 					g2.fillOval(x + 1, y + 1, iw - 2, ih - 2);
 					break;
 				case PLAY:
-					// right-pointing triangle (action playback / events)
 					int[] xs = { x + 1, x + iw - 1, x + 1 };
 					int[] ys = { y + 1, y + ih / 2, y + ih - 1 };
 					g2.fillPolygon(xs, ys, 3);
 					break;
 				case CHAT:
-					// speech bubble outline
 					g2.drawRoundRect(x, y, iw, ih - 4, 4, 4);
 					int[] tx = { x + 3, x + 7, x + 7 };
 					int[] ty = { y + ih, y + ih - 5, y + ih - 5 };
 					g2.fillPolygon(tx, ty, 3);
 					break;
 				case LOG:
-					// stacked log lines
 					for (int i = 0; i < 4; i++)
 					{
 						int yy = y + i * ((ih - 1) / 3);
@@ -788,7 +785,6 @@ public class OsrsCompanionFrame extends JFrame
 					}
 					break;
 				case STATS:
-					// bar chart bars
 					int bw = (iw - 6) / 4;
 					int[] heights = { ih / 2, (ih * 3) / 4, ih / 3, ih - 2 };
 					for (int i = 0; i < 4; i++)
@@ -798,7 +794,6 @@ public class OsrsCompanionFrame extends JFrame
 					}
 					break;
 				case VARS:
-					// "V" letter for vars/varbits
 					g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, iw - 2));
 					java.awt.FontMetrics vfm = g2.getFontMetrics();
 					String vs = "V";
@@ -807,7 +802,6 @@ public class OsrsCompanionFrame extends JFrame
 					g2.drawString(vs, vtx, vty);
 					break;
 				case BUFFER:
-					// horizontal segmented buffer
 					int sw = (iw - 6) / 4;
 					for (int i = 0; i < 4; i++)
 					{

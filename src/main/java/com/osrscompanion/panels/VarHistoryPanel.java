@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.GameStateServer;
 import com.osrscompanion.OsrsCompanionPlugin;
 import net.runelite.client.ui.ColorScheme;
@@ -36,31 +38,31 @@ public class VarHistoryPanel extends JPanel
 		this.plugin = plugin;
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// === Filter Bar ===
-		JPanel filterBar = new JPanel(new BorderLayout(4, 0));
+		JPanel filterBar = new JPanel(new BorderLayout(px(4), 0));
 		filterBar.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		filterBar.setBorder(new EmptyBorder(0, 0, 4, 0));
+		filterBar.setBorder(new EmptyBorder(0, 0, px(4), 0));
 
 		typeFilter = new JComboBox<>(new String[]{"All", "varbit", "varp"});
-		typeFilter.setFont(typeFilter.getFont().deriveFont(10f));
-		typeFilter.setPreferredSize(new Dimension(70, 22));
+		typeFilter.setFont(typeFilter.getFont().deriveFont(fontSize(10f)));
+		typeFilter.setPreferredSize(dim(70, 22));
 		typeFilter.addActionListener(e -> refresh());
 		filterBar.add(typeFilter, BorderLayout.WEST);
 
 		searchField = new JTextField();
-		searchField.setFont(searchField.getFont().deriveFont(10f));
+		searchField.setFont(searchField.getFont().deriveFont(fontSize(10f)));
 		searchField.setToolTipText("Search by ID...");
 		searchField.addActionListener(e -> refresh());
 		filterBar.add(searchField, BorderLayout.CENTER);
 
 		JButton copyBtn = new JButton("Copy");
-		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		copyBtn.setFocusPainted(false);
 		copyBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		copyBtn.setForeground(Color.WHITE);
-		copyBtn.setBorder(new EmptyBorder(2, 8, 2, 8));
+		copyBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
 		copyBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		copyBtn.addActionListener(e -> copyVarHistory());
 		filterBar.add(copyBtn, BorderLayout.EAST);
@@ -75,13 +77,13 @@ public class VarHistoryPanel extends JPanel
 		JScrollPane scrollPane = new JScrollPane(listPanel);
 		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		scrollPane.setBorder(null);
-		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(scrollPane, BorderLayout.CENTER);
 
 		// === Footer ===
 		footerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, 10f));
-		footerLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
+		footerLabel.setBorder(new EmptyBorder(px(4), 0, 0, 0));
 		add(footerLabel, BorderLayout.SOUTH);
 	}
 
@@ -146,9 +148,9 @@ public class VarHistoryPanel extends JPanel
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.DARK_GRAY_COLOR),
-			new EmptyBorder(2, 4, 2, 4)
+			new EmptyBorder(px(2), px(4), px(2), px(4))
 		));
-		row.setMaximumSize(new Dimension(600, 28));
+		row.setMaximumSize(dim(600, 28));
 
 		String type = String.valueOf(entry.getOrDefault("type", "?"));
 		int tick = entry.containsKey("tick") ? ((Number) entry.get("tick")).intValue() : 0;
@@ -164,16 +166,16 @@ public class VarHistoryPanel extends JPanel
 		String timeStr = timestamp > 0 ? TIME_FORMAT.format(new Date(timestamp)) : "??:??:??";
 		JLabel timeLabel = new JLabel(timeStr + " ");
 		timeLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		timeLabel.setFont(timeLabel.getFont().deriveFont(Font.PLAIN, 9f));
+		timeLabel.setFont(timeLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 
 		JLabel typeBadge = new JLabel(" " + type.substring(0, Math.min(6, type.length())) + " ");
 		typeBadge.setOpaque(true);
 		typeBadge.setBackground(typeColor);
 		typeBadge.setForeground(Color.WHITE);
-		typeBadge.setFont(typeBadge.getFont().deriveFont(Font.BOLD, 9f));
-		typeBadge.setBorder(new EmptyBorder(1, 3, 1, 3));
+		typeBadge.setFont(typeBadge.getFont().deriveFont(Font.BOLD, fontSize(9f)));
+		typeBadge.setBorder(new EmptyBorder(px(1), px(3), px(1), px(3)));
 
-		JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+		JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, px(2), 0));
 		leftPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		leftPanel.add(timeLabel);
 		leftPanel.add(typeBadge);
@@ -183,7 +185,7 @@ public class VarHistoryPanel extends JPanel
 		String changeText = String.format("%s %d: %d → %d", type, id, oldVal, newVal);
 		JLabel changeLabel = new JLabel(" " + changeText);
 		changeLabel.setForeground(Color.WHITE);
-		changeLabel.setFont(changeLabel.getFont().deriveFont(Font.PLAIN, 10f));
+		changeLabel.setFont(changeLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 
 		StringBuilder tooltip = new StringBuilder();
 		tooltip.append("[tick ").append(tick).append("] ").append(type).append(" ").append(id);
@@ -198,7 +200,7 @@ public class VarHistoryPanel extends JPanel
 		// Right: tick
 		JLabel tickLabel = new JLabel("T" + tick + " ");
 		tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, 9f));
+		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 		row.add(tickLabel, BorderLayout.EAST);
 
 		return row;

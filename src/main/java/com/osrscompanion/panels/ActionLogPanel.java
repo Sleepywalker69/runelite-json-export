@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.ActionTracker;
 import com.osrscompanion.OsrsCompanionPlugin;
 import net.runelite.client.ui.ColorScheme;
@@ -31,31 +33,31 @@ public class ActionLogPanel extends JPanel
 		this.plugin = plugin;
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// === Filter Bar ===
-		JPanel filterBar = new JPanel(new BorderLayout(4, 0));
+		JPanel filterBar = new JPanel(new BorderLayout(px(4), 0));
 		filterBar.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		filterBar.setBorder(new EmptyBorder(0, 0, 4, 0));
+		filterBar.setBorder(new EmptyBorder(0, 0, px(4), 0));
 
 		sourceFilter = new JComboBox<>(new String[]{"All", "menu", "script", "inferred"});
-		sourceFilter.setFont(sourceFilter.getFont().deriveFont(10f));
-		sourceFilter.setPreferredSize(new Dimension(75, 22));
+		sourceFilter.setFont(sourceFilter.getFont().deriveFont(fontSize(10f)));
+		sourceFilter.setPreferredSize(dim(75, 22));
 		sourceFilter.addActionListener(e -> refresh());
 		filterBar.add(sourceFilter, BorderLayout.WEST);
 
 		searchField = new JTextField();
-		searchField.setFont(searchField.getFont().deriveFont(10f));
+		searchField.setFont(searchField.getFont().deriveFont(fontSize(10f)));
 		searchField.setToolTipText("Search actions...");
 		searchField.addActionListener(e -> refresh());
 		filterBar.add(searchField, BorderLayout.CENTER);
 
 		JButton copyBtn = new JButton("Copy");
-		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		copyBtn.setFocusPainted(false);
 		copyBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		copyBtn.setForeground(Color.WHITE);
-		copyBtn.setBorder(new EmptyBorder(2, 8, 2, 8));
+		copyBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
 		copyBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		copyBtn.addActionListener(e -> copyActions());
 		filterBar.add(copyBtn, BorderLayout.EAST);
@@ -70,13 +72,13 @@ public class ActionLogPanel extends JPanel
 		JScrollPane scrollPane = new JScrollPane(listPanel);
 		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		scrollPane.setBorder(null);
-		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(scrollPane, BorderLayout.CENTER);
 
 		// === Footer ===
 		footerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, 10f));
-		footerLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
+		footerLabel.setBorder(new EmptyBorder(px(4), 0, 0, 0));
 		add(footerLabel, BorderLayout.SOUTH);
 	}
 
@@ -121,9 +123,9 @@ public class ActionLogPanel extends JPanel
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.DARK_GRAY_COLOR),
-			new EmptyBorder(2, 4, 2, 4)
+			new EmptyBorder(px(2), px(4), px(2), px(4))
 		));
-		row.setMaximumSize(new Dimension(600, 36));
+		row.setMaximumSize(dim(600, 36));
 
 		// Source badge + tick
 		Color badgeColor;
@@ -146,14 +148,14 @@ public class ActionLogPanel extends JPanel
 		badge.setOpaque(true);
 		badge.setBackground(badgeColor);
 		badge.setForeground(Color.WHITE);
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, 9f));
-		badge.setBorder(new EmptyBorder(1, 3, 1, 3));
+		badge.setFont(badge.getFont().deriveFont(Font.BOLD, fontSize(9f)));
+		badge.setBorder(new EmptyBorder(px(1), px(3), px(1), px(3)));
 
 		JLabel tickLabel = new JLabel(" +" + action.tick + " ");
 		tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, 9f));
+		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 
-		JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+		JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, px(2), 0));
 		leftPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		leftPanel.add(badge);
 		leftPanel.add(tickLabel);
@@ -167,7 +169,7 @@ public class ActionLogPanel extends JPanel
 		}
 		JLabel actionLabel = new JLabel(actionText);
 		actionLabel.setForeground(Color.WHITE);
-		actionLabel.setFont(actionLabel.getFont().deriveFont(Font.PLAIN, 10f));
+		actionLabel.setFont(actionLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		actionLabel.setToolTipText(action.action + " | " + action.target);
 		row.add(actionLabel, BorderLayout.CENTER);
 

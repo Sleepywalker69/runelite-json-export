@@ -1,5 +1,7 @@
 package com.osrscompanion.panels;
 
+import static com.osrscompanion.UiScale.*;
+
 import com.osrscompanion.GameStateServer;
 import com.osrscompanion.OsrsCompanionPlugin;
 import net.runelite.client.ui.ColorScheme;
@@ -42,34 +44,34 @@ public class ChatPanel extends JPanel
 		this.plugin = plugin;
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(12, 32, 12, 32));
+		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
 
 		// === Filter Bar ===
-		JPanel filterBar = new JPanel(new BorderLayout(4, 0));
+		JPanel filterBar = new JPanel(new BorderLayout(px(4), 0));
 		filterBar.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		filterBar.setBorder(new EmptyBorder(0, 0, 4, 0));
+		filterBar.setBorder(new EmptyBorder(0, 0, px(4), 0));
 
 		typeFilter = new JComboBox<>(new String[]{
 			"All", "GAMEMESSAGE", "PUBLICCHAT", "PRIVATECHAT",
 			"PRIVATECHATOUT", "FRIENDSCHAT", "CLAN_CHAT", "TRADE"
 		});
-		typeFilter.setFont(typeFilter.getFont().deriveFont(10f));
-		typeFilter.setPreferredSize(new Dimension(90, 22));
+		typeFilter.setFont(typeFilter.getFont().deriveFont(fontSize(10f)));
+		typeFilter.setPreferredSize(dim(90, 22));
 		typeFilter.addActionListener(e -> refresh());
 		filterBar.add(typeFilter, BorderLayout.WEST);
 
 		searchField = new JTextField();
-		searchField.setFont(searchField.getFont().deriveFont(10f));
+		searchField.setFont(searchField.getFont().deriveFont(fontSize(10f)));
 		searchField.setToolTipText("Search messages...");
 		searchField.addActionListener(e -> refresh());
 		filterBar.add(searchField, BorderLayout.CENTER);
 
 		JButton copyBtn = new JButton("Copy");
-		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, 10f));
+		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		copyBtn.setFocusPainted(false);
 		copyBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		copyBtn.setForeground(Color.WHITE);
-		copyBtn.setBorder(new EmptyBorder(2, 8, 2, 8));
+		copyBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
 		copyBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		copyBtn.addActionListener(e -> copyMessages());
 		filterBar.add(copyBtn, BorderLayout.EAST);
@@ -79,7 +81,7 @@ public class ChatPanel extends JPanel
 		topPanel.add(filterBar, BorderLayout.CENTER);
 
 		autoScrollCb = new JCheckBox("Auto-scroll", true);
-		autoScrollCb.setFont(autoScrollCb.getFont().deriveFont(9f));
+		autoScrollCb.setFont(autoScrollCb.getFont().deriveFont(fontSize(9f)));
 		autoScrollCb.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		autoScrollCb.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		autoScrollCb.setFocusPainted(false);
@@ -95,13 +97,13 @@ public class ChatPanel extends JPanel
 		scrollPane = new JScrollPane(listPanel);
 		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		scrollPane.setBorder(null);
-		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.getVerticalScrollBar().setUnitIncrement(px(16));
 		add(scrollPane, BorderLayout.CENTER);
 
 		// === Footer ===
 		footerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, 10f));
-		footerLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
+		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
+		footerLabel.setBorder(new EmptyBorder(px(4), 0, 0, 0));
 		add(footerLabel, BorderLayout.SOUTH);
 	}
 
@@ -171,9 +173,9 @@ public class ChatPanel extends JPanel
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.DARK_GRAY_COLOR),
-			new EmptyBorder(2, 4, 2, 4)
+			new EmptyBorder(px(2), px(4), px(2), px(4))
 		));
-		row.setMaximumSize(new Dimension(600, 32));
+		row.setMaximumSize(dim(600, 32));
 
 		String type = String.valueOf(msg.getOrDefault("type", ""));
 		String sender = String.valueOf(msg.getOrDefault("sender", ""));
@@ -186,7 +188,7 @@ public class ChatPanel extends JPanel
 		String timeStr = timestamp > 0 ? TIME_FORMAT.format(new Date(timestamp)) : "??:??:??";
 		JLabel timeLabel = new JLabel(timeStr);
 		timeLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		timeLabel.setFont(timeLabel.getFont().deriveFont(Font.PLAIN, 9f));
+		timeLabel.setFont(timeLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
 		row.add(timeLabel, BorderLayout.WEST);
 
 		// Message text
@@ -210,7 +212,7 @@ public class ChatPanel extends JPanel
 
 		JLabel msgLabel = new JLabel(" " + displayText);
 		msgLabel.setForeground(msgColor);
-		msgLabel.setFont(msgLabel.getFont().deriveFont(Font.PLAIN, 10f));
+		msgLabel.setFont(msgLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		msgLabel.setToolTipText(type + ": " + message);
 		row.add(msgLabel, BorderLayout.CENTER);
 

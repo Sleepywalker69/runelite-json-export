@@ -3896,6 +3896,251 @@ public class GameStateServer
 		return recordingTickCounter % 3 == 0;
 	}
 
+	// --- Panel accessor methods (for sidebar GUI) ---
+
+	/**
+	 * Get a thread-safe copy of the chat buffer.
+	 */
+	public List<Map<String, Object>> getChatBufferCopy()
+	{
+		synchronized (chatBuffer)
+		{
+			return new ArrayList<>(chatBuffer);
+		}
+	}
+
+	/**
+	 * Get a thread-safe copy of the var history.
+	 */
+	public List<Map<String, Object>> getVarHistoryCopy()
+	{
+		synchronized (varHistory)
+		{
+			return new ArrayList<>(varHistory);
+		}
+	}
+
+	/**
+	 * Get a thread-safe copy of the interaction history.
+	 */
+	public List<Map<String, Object>> getInteractionHistoryCopy()
+	{
+		synchronized (interactionHistory)
+		{
+			return new ArrayList<>(interactionHistory);
+		}
+	}
+
+	/**
+	 * Get a thread-safe copy of the loot log.
+	 */
+	public List<Map<String, Object>> getLootLogCopy()
+	{
+		synchronized (lootLog)
+		{
+			return new ArrayList<>(lootLog);
+		}
+	}
+
+	/**
+	 * Get a thread-safe copy of the XP baselines.
+	 */
+	public Map<String, Integer> getXpBaselinesCopy()
+	{
+		synchronized (xpBaselines)
+		{
+			return new LinkedHashMap<>(xpBaselines);
+		}
+	}
+
+	/**
+	 * Get the session start timestamp.
+	 */
+	public long getSessionStartMs()
+	{
+		return sessionStartMs;
+	}
+
+	/**
+	 * Get the number of connected SSE clients.
+	 */
+	public int getSseClientCount()
+	{
+		return sseClients.size();
+	}
+
+	/**
+	 * Get total XP gained this session across all skills.
+	 */
+	public int getTotalXpGained(Client clientRef)
+	{
+		int total = 0;
+		Map<String, Integer> baselines = getXpBaselinesCopy();
+		for (net.runelite.api.Skill skill : net.runelite.api.Skill.values())
+		{
+			if (skill == net.runelite.api.Skill.OVERALL) continue;
+			Integer baseline = baselines.get(skill.name());
+			if (baseline != null)
+			{
+				int current = clientRef.getSkillExperience(skill);
+				int gained = current - baseline;
+				if (gained > 0) total += gained;
+			}
+		}
+		return total;
+	}
+
+	/**
+	 * Get recording event count.
+	 */
+	public int getRecordingEventCount()
+	{
+		return recordingBuffer.size();
+	}
+
+	/**
+	 * Get a copy of the recording buffer for the panel event viewer.
+	 */
+	public List<Map<String, Object>> getRecordingBufferCopy()
+	{
+		synchronized (recordingBuffer)
+		{
+			return new ArrayList<>(recordingBuffer);
+		}
+	}
+
+	/**
+	 * Get recording tick info: [ticksElapsed, maxTicks], or null if not recording.
+	 */
+	public int[] getRecordingTickInfo()
+	{
+		if (!isRecording) return null;
+		try
+		{
+			int currentTick = onClientThread(() -> client.getTickCount());
+			return new int[]{currentTick - recordingStartTick, recordingMaxTicks};
+		}
+		catch (Exception e)
+		{
+			return null;
+		}
+	}
+
+	/**
+	 * Start recording from the panel (no HTTP involved).
+	 */
+	public void startRecordingFromPanel(int durationSeconds, Set<String> eventFilter)
+	{
+		if (durationSeconds < 1) durationSeconds = 1;
+		if (durationSeconds > 600) durationSeconds = 600;
+
+		final int maxTicks = (int) Math.ceil(durationSeconds / 0.6);
+
+		try
+		{
+			int startTick = onClientThread(() -> client.getTickCount());
+
+			if (eventFilter != null && !eventFilter.isEmpty())
+			{
+				recordingEventFilter = eventFilter;
+			}
+			else
+			{
+				recordingEventFilter = null;
+			}
+
+			synchronized (recordingBuffer)
+			{
+				recordingBuffer.clear();
+			}
+			recordingStartTick = startTick;
+			recordingMaxTicks = maxTicks;
+			recordingTickCounter = 0;
+			isRecording = true;
+
+			log.info("Recording started from panel: {} seconds ({} ticks), filter: {}",
+				durationSeconds, maxTicks, recordingEventFilter != null ? recordingEventFilter : "all");
+		}
+		catch (Exception e)
+		{
+			log.warn("Failed to start recording from panel", e);
+		}
+	}
+
+	/**
+	 * Stop recording from the panel.
+	 */
+	public void stopRecordingFromPanel()
+	{
+		boolean wasRecording = isRecording;
+		isRecording = false;
+		if (wasRecording)
+		{
+			log.info("Recording stopped from panel: {} events captured", recordingBuffer.size());
+		}
+	}
+
+	/**
+	 * Take a screenshot and save to file. Called from panel button.
+	 */
+	public void takeScreenshotToFile()
+	{
+		if (drawManager == null)
+		{
+			log.warn("DrawManager not available for screenshot");
+			return;
+		}
+		try
+		{
+			CompletableFuture<BufferedImage> future = new CompletableFuture<>();
+			drawManager.requestNextFrameListener(image ->
+			{
+				try
+				{
+					BufferedImage bi;
+					if (image instanceof BufferedImage)
+					{
+						bi = (BufferedImage) image;
+					}
+					else
+					{
+						bi = new BufferedImage(image.getWidth(null), image.getHeight(null),
+							BufferedImage.TYPE_INT_RGB);
+						java.awt.Graphics2D g = bi.createGraphics();
+						try
+						{
+							g.drawImage(image, 0, 0, null);
+						}
+						finally
+						{
+							g.dispose();
+						}
+					}
+					future.complete(bi);
+				}
+				catch (Exception e)
+				{
+					future.completeExceptionally(e);
+				}
+			});
+
+			BufferedImage result = future.get(2, TimeUnit.SECONDS);
+			if (result != null)
+			{
+				String filename = "screenshot_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date()) + ".png";
+				java.io.File dir = new java.io.File(System.getProperty("user.home"), ".runelite/osrs-companion/screenshots");
+				dir.mkdirs();
+				java.io.File file = new java.io.File(dir, filename);
+				ImageIO.write(result, "png", file);
+				log.info("Screenshot saved to {}", file.getAbsolutePath());
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("Failed to take screenshot", e);
+		}
+	}
+
 	// --- Name search infrastructure ---
 
 	private Map<String, List<Integer>> buildItemNameIndex() throws Exception

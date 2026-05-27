@@ -16,9 +16,13 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.DrawManager;
+import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.util.ImageUtil;
 
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -64,6 +68,13 @@ public class OsrsCompanionPlugin extends Plugin
 	@Inject
 	private DrawManager drawManager;
 
+	@Inject
+	private ClientToolbar clientToolbar;
+
+	private OsrsCompanionPanel panel;
+	private NavigationButton navButton;
+	private OsrsCompanionFrame guiFrame;
+	private volatile long lastSaveMs = 0L;
 	private PlayerDataCollector collector;
 	private PlayerDataWriter writer;
 	private GameStateServer apiServer;
@@ -109,6 +120,21 @@ public class OsrsCompanionPlugin extends Plugin
 			startApiServer();
 		}
 
+		// Create sidebar panel and toolbar icon
+		panel = new OsrsCompanionPanel(client, config, this);
+		navButton = NavigationButton.builder()
+			.tooltip("OSRS MCP Companion")
+			.icon(ImageUtil.loadImageResource(getClass(), "/icon.png"))
+			.priority(5)
+			.panel(panel)
+			.build();
+		clientToolbar.addNavigation(navButton);
+
+		// Create the standalone GUI window (hidden until user clicks "Open GUI")
+		SwingUtilities.invokeLater(() -> {
+			guiFrame = new OsrsCompanionFrame(client, config, this);
+		});
+
 		log.info("OSRS Companion started — saving to ~/.runelite/osrs-companion/");
 	}
 
@@ -136,6 +162,27 @@ public class OsrsCompanionPlugin extends Plugin
 
 		stopApiServer();
 
+		// Remove sidebar panel
+		if (navButton != null)
+		{
+			clientToolbar.removeNavigation(navButton);
+			navButton = null;
+		}
+		if (panel != null)
+		{
+			panel.dispose();
+		}
+		panel = null;
+
+		// Dispose standalone GUI window
+		SwingUtilities.invokeLater(() -> {
+			if (guiFrame != null)
+			{
+				guiFrame.shutdown();
+				guiFrame = null;
+			}
+		});
+
 		collector = null;
 		writer = null;
 		log.info("OSRS Companion stopped");
@@ -162,6 +209,61 @@ public class OsrsCompanionPlugin extends Plugin
 			apiServer.stop();
 			apiServer = null;
 		}
+	}
+
+	// --- Public accessors for the sidebar panel ---
+
+	public GameStateServer getApiServer()
+	{
+		return apiServer;
+	}
+
+	public TickStateBuffer getTickBuffer()
+	{
+		return tickBuffer;
+	}
+
+	public ActionTracker getActionTracker()
+	{
+		return actionTracker;
+	}
+
+	public LogCaptureAppender getLogAppender()
+	{
+		return logCaptureAppender;
+	}
+
+	/**
+	 * Trigger an immediate save to disk (called from panel button).
+	 */
+	public void triggerSave()
+	{
+		dirty = true;
+		doSave();
+	}
+
+	/** Opens (or focuses) the standalone GUI window. */
+	public void openGui()
+	{
+		SwingUtilities.invokeLater(() -> {
+			if (guiFrame == null)
+			{
+				guiFrame = new OsrsCompanionFrame(client, config, this);
+			}
+			guiFrame.open();
+		});
+	}
+
+	/** Hook the frame calls when its window is closed. */
+	public void onGuiClosed()
+	{
+		// No-op for now; reserved for future "GUI is open" indicator on the sidebar button.
+	}
+
+	/** Used by the frame's footer to render "Saved Ns ago". */
+	public long getLastSaveMs()
+	{
+		return lastSaveMs;
 	}
 
 	@Provides
@@ -530,6 +632,21 @@ public class OsrsCompanionPlugin extends Plugin
 				invIds, invQtys, equipIds,
 				posX, posY, plane
 			);
+		}
+
+		// Refresh sidebar panel and GUI window every 3 ticks (~1.8s)
+		if (client.getTickCount() % 3 == 0)
+		{
+			SwingUtilities.invokeLater(() -> {
+				if (panel != null)
+				{
+					panel.refresh();
+				}
+				if (guiFrame != null && guiFrame.isVisible())
+				{
+					guiFrame.refreshActiveTab();
+				}
+			});
 		}
 	}
 
@@ -1350,6 +1467,7 @@ public class OsrsCompanionPlugin extends Plugin
 			try
 			{
 				writer.write(snapshot);
+				lastSaveMs = System.currentTimeMillis();
 			}
 			catch (Exception e)
 			{

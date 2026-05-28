@@ -15,19 +15,32 @@ import java.util.List;
 
 /**
  * Recording tab — start/stop recording, choose duration and event types, view status.
+ * Layout matches mockup: grid-2 top (Controls + Preset), full-width 4-col event grid below.
  */
 public class RecordingPanel extends JPanel
 {
 	private final OsrsCompanionPlugin plugin;
 
-	private final JButton toggleButton = new JButton("Start Recording");
-	private final JSpinner durationSpinner;
-	private final JLabel statusLabel = new JLabel("Idle");
-	private final JLabel eventsLabel = new JLabel("0 events");
-	private final JLabel timeLabel = new JLabel("—");
-	private final JProgressBar progressBar = new JProgressBar(0, 100);
+	// Controls card KV
+	private final RecordingDot recordingDot = new RecordingDot();
+	private final JLabel statusVal  = PanelUtils.val("Idle", PanelUtils.MUTED);
+	private final JLabel durationVal = PanelUtils.val("180 sec");
+	private final JLabel elapsedVal = PanelUtils.val("—");
+	private final JLabel eventsVal  = PanelUtils.val("0");
+	private final JLabel fileSizeVal = PanelUtils.val("—");
 
-	// Event type presets
+	// Progress bar
+	private final PanelUtils.StatusBar progressBar = new PanelUtils.StatusBar(PanelUtils.REC_RED);
+
+	// Buttons
+	private final JButton toggleBtn;
+	private final JButton pauseBtn   = PanelUtils.btn("Pause");
+	private final JButton revealBtn  = PanelUtils.btn("Reveal file");
+
+	// Preset card
+	private JSpinner durationSpinner;
+
+	// Event types
 	private static final String[] ALL_EVENT_TYPES = {
 		"game_tick", "hitsplat", "animation_changed", "npc_spawned", "npc_despawned",
 		"actor_death", "var_changed", "menu_clicked", "stat_changed", "item_changed",
@@ -38,7 +51,7 @@ public class RecordingPanel extends JPanel
 	private static final Map<String, String[]> PRESETS = new LinkedHashMap<>();
 	static
 	{
-		PRESETS.put("All", null); // null = no filter
+		PRESETS.put("All", null);
 		PRESETS.put("Boss", new String[]{
 			"game_tick", "hitsplat", "animation_changed", "npc_spawned", "npc_despawned",
 			"actor_death", "menu_clicked", "object_spawned", "object_despawned",
@@ -59,199 +72,237 @@ public class RecordingPanel extends JPanel
 
 	private final Map<String, JCheckBox> eventCheckboxes = new LinkedHashMap<>();
 	private String activePreset = "All";
+	private final Map<String, JButton> presetButtons = new LinkedHashMap<>();
 
-	// Recording data viewer
-	private final JPanel eventsPanel;
+	// Recorded Events viewer
+	private final JTextPane eventsPane;
 	private final JLabel eventsFooterLabel = new JLabel("—");
 
 	public RecordingPanel(OsrsCompanionPlugin plugin)
 	{
 		this.plugin = plugin;
 		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
+		setBackground(PanelUtils.PAGE_BG);
+		setBorder(new EmptyBorder(px(16), px(20), px(16), px(20)));
 
-		// === Controls ===
-		add(sectionHeader("Controls"));
+		// Panel header
+		JPanel head = PanelUtils.panelHead("Record", "capture a slice of game events to disk");
+		head.setAlignmentX(LEFT_ALIGNMENT);
+		add(head);
+		add(PanelUtils.vgap(14));
 
-		// Duration
-		JPanel durationRow = new JPanel(new BorderLayout());
-		durationRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		durationRow.setMaximumSize(dim(600, 26));
-		JLabel durLabel = new JLabel("Duration (sec):");
-		durLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		durLabel.setFont(durLabel.getFont().deriveFont(fontSize(11f)));
-		durationSpinner = new JSpinner(new SpinnerNumberModel(180, 30, 600, 30));
-		durationSpinner.setPreferredSize(dim(70, 22));
-		durationRow.add(durLabel, BorderLayout.WEST);
-		durationRow.add(durationSpinner, BorderLayout.EAST);
-		add(durationRow);
+		// ── Top row: grid-2 (Controls + Preset) ─────────────────────
+		JPanel controlsCard = buildControlsCard();
+		JPanel presetCard   = buildPresetCard();
+		JPanel topRow = PanelUtils.grid2(controlsCard, presetCard);
+		topRow.setAlignmentX(LEFT_ALIGNMENT);
+		topRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(300)));
+		add(topRow);
+		add(PanelUtils.vgap(14));
 
-		add(Box.createVerticalStrut(px(4)));
+		// ── Event Types card (full width, 4-col grid) ───────────────
+		JPanel eventCard = buildEventTypesCard();
+		eventCard.setAlignmentX(LEFT_ALIGNMENT);
+		add(eventCard);
+		add(PanelUtils.vgap(14));
 
-		// Start/Stop button
-		toggleButton.setFont(toggleButton.getFont().deriveFont(Font.BOLD, fontSize(12f)));
-		toggleButton.setFocusPainted(false);
-		toggleButton.setBackground(new Color(76, 175, 80));
-		toggleButton.setForeground(Color.WHITE);
-		toggleButton.setMaximumSize(dim(600, 32));
-		toggleButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		toggleButton.addActionListener(e -> toggleRecording());
-		add(toggleButton);
+		// ── Recorded Events viewer ──────────────────────────────────
+		JPanel viewerCard = PanelUtils.card();
+		viewerCard.setLayout(new BoxLayout(viewerCard, BoxLayout.Y_AXIS));
+		viewerCard.setAlignmentX(LEFT_ALIGNMENT);
+		viewerCard.add(PanelUtils.cardHeader("Recorded Events"));
+		viewerCard.add(PanelUtils.vgap(8));
 
-		add(Box.createVerticalStrut(px(8)));
+		JPanel viewerControls = new JPanel(new BorderLayout(px(4), 0));
+		viewerControls.setOpaque(false);
+		viewerControls.setAlignmentX(LEFT_ALIGNMENT);
+		viewerControls.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(30)));
 
-		// === Status ===
-		add(sectionHeader("Status"));
-		statusLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		statusLabel.setFont(statusLabel.getFont().deriveFont(fontSize(11f)));
-		statusLabel.setAlignmentX(LEFT_ALIGNMENT);
-		add(statusLabel);
+		JButton loadBtn = PanelUtils.btn("Load Events");
+		loadBtn.addActionListener(e -> loadRecordedEvents());
+		viewerControls.add(loadBtn, BorderLayout.WEST);
 
-		eventsLabel.setForeground(Color.WHITE);
-		eventsLabel.setFont(eventsLabel.getFont().deriveFont(fontSize(11f)));
-		eventsLabel.setAlignmentX(LEFT_ALIGNMENT);
-		add(eventsLabel);
-
-		timeLabel.setForeground(Color.WHITE);
-		timeLabel.setFont(timeLabel.getFont().deriveFont(fontSize(11f)));
-		timeLabel.setAlignmentX(LEFT_ALIGNMENT);
-		add(timeLabel);
-
-		add(Box.createVerticalStrut(px(2)));
-		progressBar.setMaximumSize(dim(600, 14));
-		progressBar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		progressBar.setForeground(ColorScheme.BRAND_ORANGE);
-		progressBar.setBorderPainted(false);
-		progressBar.setStringPainted(true);
-		progressBar.setFont(progressBar.getFont().deriveFont(fontSize(9f)));
-		add(progressBar);
-
-		add(Box.createVerticalStrut(px(8)));
-
-		// === Presets ===
-		add(sectionHeader("Event Presets"));
-		JPanel presetRow = new JPanel(new GridLayout(2, 3, px(2), px(2)));
-		presetRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		presetRow.setMaximumSize(dim(600, 50));
-
-		for (String preset : PRESETS.keySet())
-		{
-			JButton btn = new JButton(preset);
-			btn.setFont(btn.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
-			btn.setFocusPainted(false);
-			btn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			btn.setForeground(Color.WHITE);
-			btn.setBorder(new EmptyBorder(px(2), px(4), px(2), px(4)));
-			btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-			btn.addActionListener(e -> applyPreset(preset));
-			presetRow.add(btn);
-		}
-		add(presetRow);
-
-		add(Box.createVerticalStrut(px(8)));
-
-		// === Event Types ===
-		add(sectionHeader("Event Types"));
-		JPanel checkboxPanel = new JPanel();
-		checkboxPanel.setLayout(new BoxLayout(checkboxPanel, BoxLayout.Y_AXIS));
-		checkboxPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		for (String type : ALL_EVENT_TYPES)
-		{
-			JCheckBox cb = new JCheckBox(type, true);
-			cb.setFont(cb.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-			cb.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			cb.setBackground(ColorScheme.DARK_GRAY_COLOR);
-			cb.setFocusPainted(false);
-			eventCheckboxes.put(type, cb);
-			checkboxPanel.add(cb);
-		}
-
-		JScrollPane checkScroll = new JScrollPane(checkboxPanel);
-		checkScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		checkScroll.setBorder(null);
-		checkScroll.setPreferredSize(new Dimension(0, px(160)));
-		checkScroll.setMaximumSize(dim(600, 160));
-		checkScroll.getVerticalScrollBar().setUnitIncrement(px(16));
-		add(checkScroll);
-
-		add(Box.createVerticalStrut(px(10)));
-
-		// === Recorded Events Viewer ===
-		add(sectionHeader("Recorded Events"));
-
-		JPanel eventsControlRow = new JPanel(new BorderLayout(px(4), 0));
-		eventsControlRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		eventsControlRow.setMaximumSize(dim(600, 26));
-
-		JButton viewEventsBtn = new JButton("Load Events");
-		viewEventsBtn.setFont(viewEventsBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		viewEventsBtn.setFocusPainted(false);
-		viewEventsBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		viewEventsBtn.setForeground(Color.WHITE);
-		viewEventsBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
-		viewEventsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		viewEventsBtn.addActionListener(e -> loadRecordedEvents());
-		eventsControlRow.add(viewEventsBtn, BorderLayout.WEST);
-
-		JButton copyEventsBtn = new JButton("Copy All");
-		copyEventsBtn.setFont(copyEventsBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		copyEventsBtn.setFocusPainted(false);
-		copyEventsBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		copyEventsBtn.setForeground(Color.WHITE);
-		copyEventsBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
-		copyEventsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		JButton copyEventsBtn = PanelUtils.btn("Copy All");
 		copyEventsBtn.addActionListener(e -> copyRecordedEvents());
-		eventsControlRow.add(copyEventsBtn, BorderLayout.EAST);
+		viewerControls.add(copyEventsBtn, BorderLayout.EAST);
 
-		add(eventsControlRow);
-		add(Box.createVerticalStrut(px(4)));
+		viewerCard.add(viewerControls);
+		viewerCard.add(PanelUtils.vgap(4));
 
-		eventsPanel = new JPanel();
-		eventsPanel.setLayout(new BoxLayout(eventsPanel, BoxLayout.Y_AXIS));
-		eventsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		eventsPane = new JTextPane();
+		eventsPane.setEditable(false);
+		eventsPane.setBackground(PanelUtils.FEED_BG);
+		eventsPane.setFont(PanelUtils.monoFont(10f));
+		eventsPane.setForeground(Color.WHITE);
+		PanelUtils.installTextPopup(eventsPane);
 
-		JScrollPane eventsScroll = new JScrollPane(eventsPanel);
-		eventsScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		eventsScroll.setBorder(null);
+		JScrollPane eventsScroll = new JScrollPane(eventsPane);
+		eventsScroll.setBorder(BorderFactory.createLineBorder(Color.BLACK, 1));
 		eventsScroll.setPreferredSize(new Dimension(0, px(200)));
-		eventsScroll.setMaximumSize(dim(600, 300));
 		eventsScroll.getVerticalScrollBar().setUnitIncrement(px(16));
-		add(eventsScroll);
+		eventsScroll.setAlignmentX(LEFT_ALIGNMENT);
+		viewerCard.add(eventsScroll);
+		viewerCard.add(PanelUtils.vgap(4));
 
 		eventsFooterLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		eventsFooterLabel.setFont(eventsFooterLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
 		eventsFooterLabel.setAlignmentX(LEFT_ALIGNMENT);
-		add(eventsFooterLabel);
+		viewerCard.add(eventsFooterLabel);
 
+		add(viewerCard);
 		add(Box.createVerticalGlue());
+
+		// initialise toggle button reference
+		toggleBtn = null; // assigned in buildControlsCard
 	}
 
+	// ── Controls Card ───────────────────────────────────────────────
+	private JButton internalToggleBtn;
+
+	private JPanel buildControlsCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
+		card.add(PanelUtils.cardHeader("Controls"));
+		card.add(PanelUtils.vgap(10));
+
+		// Status row with recording dot
+		JPanel statusRow = new JPanel(new BorderLayout(px(12), 0));
+		statusRow.setOpaque(false);
+		statusRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(20)));
+		statusRow.setAlignmentX(LEFT_ALIGNMENT);
+		JLabel statusKey = new JLabel("Status");
+		statusKey.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		statusKey.setFont(statusKey.getFont().deriveFont(Font.PLAIN, fontSize(12f)));
+		statusKey.setPreferredSize(new Dimension(px(110), px(18)));
+		statusRow.add(statusKey, BorderLayout.WEST);
+		JPanel statusRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, px(4), 0));
+		statusRight.setOpaque(false);
+		statusRight.add(recordingDot);
+		statusRight.add(statusVal);
+		statusRow.add(statusRight, BorderLayout.CENTER);
+		card.add(statusRow);
+		card.add(PanelUtils.kvRow("Duration",  durationVal));
+		card.add(PanelUtils.kvRow("Elapsed",   elapsedVal));
+		card.add(PanelUtils.kvRow("Events",    eventsVal));
+		card.add(PanelUtils.kvRow("File size", fileSizeVal));
+		card.add(PanelUtils.vgap(10));
+		card.add(progressBar);
+		card.add(PanelUtils.vgap(12));
+
+		internalToggleBtn = PanelUtils.btnDanger("■ Stop");
+		internalToggleBtn.setText("Start Recording");
+		internalToggleBtn.setBackground(PanelUtils.GREEN);
+		internalToggleBtn.addActionListener(e -> toggleRecording());
+
+		JPanel btns = PanelUtils.btnRow(internalToggleBtn, pauseBtn, revealBtn);
+		btns.setAlignmentX(LEFT_ALIGNMENT);
+		card.add(btns);
+
+		return card;
+	}
+
+	// ── Preset Card ─────────────────────────────────────────────────
+	private JPanel buildPresetCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
+		card.add(PanelUtils.cardHeader("Preset"));
+		card.add(PanelUtils.vgap(10));
+
+		// Preset buttons row
+		JPanel presetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, px(4), px(2)));
+		presetRow.setOpaque(false);
+		presetRow.setAlignmentX(LEFT_ALIGNMENT);
+		for (String preset : PRESETS.keySet())
+		{
+			JButton btn = "All".equals(preset) ? PanelUtils.btnPrimary(preset) : PanelUtils.btn(preset);
+			btn.addActionListener(e -> applyPreset(preset));
+			presetButtons.put(preset, btn);
+			presetRow.add(btn);
+		}
+		card.add(presetRow);
+		card.add(PanelUtils.vgap(10));
+
+		// Duration spinner
+		JPanel durRow = new JPanel(new BorderLayout(px(12), 0));
+		durRow.setOpaque(false);
+		durRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(24)));
+		durRow.setAlignmentX(LEFT_ALIGNMENT);
+		JLabel durLabel = new JLabel("Duration (sec):");
+		durLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		durLabel.setFont(durLabel.getFont().deriveFont(fontSize(11f)));
+		durationSpinner = new JSpinner(new SpinnerNumberModel(180, 30, 600, 30));
+		durationSpinner.setPreferredSize(new Dimension(px(70), px(22)));
+		durRow.add(durLabel, BorderLayout.WEST);
+		durRow.add(durationSpinner, BorderLayout.EAST);
+		card.add(durRow);
+		card.add(PanelUtils.vgap(6));
+
+		// KV info
+		JLabel autoSave = PanelUtils.val("Every 30s");
+		card.add(PanelUtils.kvRow("Auto-save", autoSave));
+		JLabel compress = PanelUtils.val("gzip", PanelUtils.GREEN);
+		card.add(PanelUtils.kvRow("Compress", compress));
+
+		return card;
+	}
+
+	// ── Event Types Card (4-col grid) ───────────────────────────────
+	private JPanel buildEventTypesCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
+		card.add(PanelUtils.cardHeader("Event types"));
+		card.add(PanelUtils.vgap(10));
+
+		JPanel grid = new JPanel(new GridLayout(0, 4, px(14), px(6)));
+		grid.setOpaque(false);
+		grid.setAlignmentX(LEFT_ALIGNMENT);
+
+		for (String type : ALL_EVENT_TYPES)
+		{
+			JCheckBox cb = new JCheckBox(type, true);
+			cb.setFont(cb.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
+			cb.setForeground(new Color(0xc8, 0xc8, 0xc8));
+			cb.setBackground(PanelUtils.CARD_BG);
+			cb.setFocusPainted(false);
+			eventCheckboxes.put(type, cb);
+			grid.add(cb);
+		}
+
+		card.add(grid);
+		return card;
+	}
+
+	// ── Refresh ─────────────────────────────────────────────────────
 	public void refresh()
 	{
 		GameStateServer server = plugin.getApiServer();
 		if (server == null)
 		{
-			statusLabel.setText("API server not running");
-			statusLabel.setForeground(new Color(244, 67, 54));
-			eventsLabel.setText("—");
-			timeLabel.setText("—");
-			progressBar.setValue(0);
-			progressBar.setString("—");
+			statusVal.setText("API server not running");
+			statusVal.setForeground(PanelUtils.RED);
+			eventsVal.setText("—");
+			elapsedVal.setText("—");
+			progressBar.update(0, "—");
 			return;
 		}
 
 		boolean recording = server.isRecording();
+		recordingDot.setActive(recording);
 		if (recording)
 		{
-			statusLabel.setText("RECORDING");
-			statusLabel.setForeground(new Color(244, 67, 54));
-			toggleButton.setText("Stop Recording");
-			toggleButton.setBackground(new Color(244, 67, 54));
+			statusVal.setText("Recording");
+			statusVal.setForeground(PanelUtils.REC_RED);
+			internalToggleBtn.setText("■ Stop");
+			internalToggleBtn.setBackground(new Color(0x6e, 0x24, 0x24));
 
 			int eventCount = server.getRecordingEventCount();
-			eventsLabel.setText(String.format("%,d / %,d events", eventCount, 10_000));
+			eventsVal.setText(String.format("%,d", eventCount));
 
 			int[] tickInfo = server.getRecordingTickInfo();
 			if (tickInfo != null)
@@ -259,34 +310,30 @@ public class RecordingPanel extends JPanel
 				int elapsed = tickInfo[0];
 				int max = tickInfo[1];
 				int pct = max > 0 ? (elapsed * 100 / max) : 0;
-				progressBar.setValue(pct);
 				int secsLeft = (int) ((max - elapsed) * 0.6);
-				timeLabel.setText(String.format("%ds remaining", Math.max(0, secsLeft)));
-				progressBar.setString(pct + "%");
+				elapsedVal.setText(String.format("%02d:%02d / %02d:%02d",
+					(int) (elapsed * 0.6) / 60, (int) (elapsed * 0.6) % 60,
+					(int) (max * 0.6) / 60, (int) (max * 0.6) % 60));
+				progressBar.update(pct, pct + "%");
 			}
 		}
 		else
 		{
-			statusLabel.setText("Idle");
-			statusLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			toggleButton.setText("Start Recording");
-			toggleButton.setBackground(new Color(76, 175, 80));
+			statusVal.setText("Idle");
+			statusVal.setForeground(PanelUtils.MUTED);
+			internalToggleBtn.setText("Start Recording");
+			internalToggleBtn.setBackground(PanelUtils.GREEN);
 
 			int eventCount = server.getRecordingEventCount();
-			if (eventCount > 0)
-			{
-				eventsLabel.setText(String.format("%,d events recorded", eventCount));
-			}
-			else
-			{
-				eventsLabel.setText("No events");
-			}
-			timeLabel.setText("—");
-			progressBar.setValue(0);
-			progressBar.setString("—");
+			eventsVal.setText(eventCount > 0 ? String.format("%,d recorded", eventCount) : "0");
+			elapsedVal.setText("—");
+			progressBar.update(0, "—");
 		}
+
+		durationVal.setText((int) durationSpinner.getValue() + " sec");
 	}
 
+	// ── Recording control ───────────────────────────────────────────
 	private void toggleRecording()
 	{
 		GameStateServer server = plugin.getApiServer();
@@ -306,7 +353,6 @@ public class RecordingPanel extends JPanel
 			Set<String> filter = getSelectedEventTypes();
 			server.startRecordingFromPanel(duration, filter);
 		}
-
 		refresh();
 	}
 
@@ -317,11 +363,7 @@ public class RecordingPanel extends JPanel
 
 		if (types == null)
 		{
-			// "All" — check everything
-			for (JCheckBox cb : eventCheckboxes.values())
-			{
-				cb.setSelected(true);
-			}
+			for (JCheckBox cb : eventCheckboxes.values()) cb.setSelected(true);
 		}
 		else
 		{
@@ -331,13 +373,30 @@ public class RecordingPanel extends JPanel
 				entry.getValue().setSelected(typeSet.contains(entry.getKey()));
 			}
 		}
+
+		// Update button styling
+		for (Map.Entry<String, JButton> entry : presetButtons.entrySet())
+		{
+			JButton b = entry.getValue();
+			if (entry.getKey().equals(preset))
+			{
+				b.setBackground(ColorScheme.BRAND_ORANGE);
+				b.setForeground(new Color(0x1e, 0x1e, 0x1e));
+				b.setFont(b.getFont().deriveFont(Font.BOLD));
+			}
+			else
+			{
+				b.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
+				b.setForeground(Color.WHITE);
+				b.setFont(b.getFont().deriveFont(Font.PLAIN));
+			}
+		}
 	}
 
 	private Set<String> getSelectedEventTypes()
 	{
 		Set<String> selected = new LinkedHashSet<>();
 		boolean allSelected = true;
-
 		for (Map.Entry<String, JCheckBox> entry : eventCheckboxes.entrySet())
 		{
 			if (entry.getValue().isSelected())
@@ -349,61 +408,35 @@ public class RecordingPanel extends JPanel
 				allSelected = false;
 			}
 		}
-
-		// If all selected, return null (no filter)
 		return allSelected ? null : selected;
 	}
 
+	// ── Events viewer ───────────────────────────────────────────────
 	@SuppressWarnings("unchecked")
 	private void loadRecordedEvents()
 	{
 		GameStateServer server = plugin.getApiServer();
 		if (server == null)
 		{
-			eventsPanel.removeAll();
 			eventsFooterLabel.setText("API server not running");
-			eventsPanel.revalidate();
-			eventsPanel.repaint();
 			return;
 		}
 
 		List<Map<String, Object>> events = server.getRecordingBufferCopy();
-		eventsPanel.removeAll();
-
-		int shown = 0;
-		int max = Math.min(events.size(), 500); // Cap at 500 for perf
+		StringBuilder sb = new StringBuilder();
+		int max = Math.min(events.size(), 500);
 		for (int i = 0; i < max; i++)
 		{
 			Map<String, Object> evt = events.get(i);
 			String type = String.valueOf(evt.getOrDefault("type", "?"));
 			int tick = evt.containsKey("tick") ? ((Number) evt.get("tick")).intValue() : 0;
-
-			String summary = buildEventSummary(type, evt);
-
-			JPanel row = new JPanel(new BorderLayout());
-			row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			row.setMaximumSize(dim(600, 20));
-			row.setBorder(new EmptyBorder(px(1), px(4), px(1), px(4)));
-
-			JLabel tickLabel = new JLabel("[" + tick + "] ");
-			tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
-			row.add(tickLabel, BorderLayout.WEST);
-
-			JLabel summaryLabel = new JLabel(summary);
-			summaryLabel.setForeground(getEventColor(type));
-			summaryLabel.setFont(summaryLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-			summaryLabel.setToolTipText(type + ": " + evt.toString());
-			row.add(summaryLabel, BorderLayout.CENTER);
-
-			eventsPanel.add(row);
-			shown++;
+			sb.append("[").append(tick).append("] ").append(type).append(": ");
+			sb.append(buildEventSummary(type, evt)).append("\n");
 		}
 
-		eventsFooterLabel.setText(shown + " / " + events.size() + " events loaded");
-
-		eventsPanel.revalidate();
-		eventsPanel.repaint();
+		eventsPane.setText(sb.toString());
+		eventsPane.setCaretPosition(0);
+		eventsFooterLabel.setText(max + " / " + events.size() + " events loaded");
 	}
 
 	private void copyRecordedEvents()
@@ -414,7 +447,6 @@ public class RecordingPanel extends JPanel
 		List<Map<String, Object>> events = server.getRecordingBufferCopy();
 		StringBuilder sb = new StringBuilder();
 		sb.append("=== Recorded Events (").append(events.size()).append(") ===\n");
-
 		for (Map<String, Object> evt : events)
 		{
 			String type = String.valueOf(evt.getOrDefault("type", "?"));
@@ -422,11 +454,11 @@ public class RecordingPanel extends JPanel
 			sb.append("[").append(tick).append("] ").append(type).append(": ");
 			sb.append(buildEventSummary(type, evt)).append("\n");
 		}
-
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
 			new StringSelection(sb.toString()), null);
 	}
 
+	@SuppressWarnings("unchecked")
 	private String buildEventSummary(String type, Map<String, Object> evt)
 	{
 		switch (type)
@@ -435,11 +467,7 @@ public class RecordingPanel extends JPanel
 			{
 				Object target = evt.get("target");
 				String name = "?";
-				if (target instanceof Map)
-				{
-					Object n = ((Map<?, ?>) target).get("name");
-					if (n != null) name = String.valueOf(n);
-				}
+				if (target instanceof Map) { Object n = ((Map<?, ?>) target).get("name"); if (n != null) name = String.valueOf(n); }
 				int amount = evt.containsKey("amount") ? ((Number) evt.get("amount")).intValue() : 0;
 				return "Hit " + amount + " on " + name;
 			}
@@ -447,11 +475,7 @@ public class RecordingPanel extends JPanel
 			{
 				Object actor = evt.get("actor");
 				String name = "?";
-				if (actor instanceof Map)
-				{
-					Object n = ((Map<?, ?>) actor).get("name");
-					if (n != null) name = String.valueOf(n);
-				}
+				if (actor instanceof Map) { Object n = ((Map<?, ?>) actor).get("name"); if (n != null) name = String.valueOf(n); }
 				int anim = evt.containsKey("animation") ? ((Number) evt.get("animation")).intValue() : -1;
 				return name + " anim=" + anim;
 			}
@@ -461,52 +485,63 @@ public class RecordingPanel extends JPanel
 				Object target = evt.get("target");
 				return (option != null ? option : "") + " " + (target != null ? target : "");
 			}
-			case "npc_spawned":
-			case "npc_despawned":
+			case "npc_spawned": case "npc_despawned":
 			{
 				Object npc = evt.get("npc");
-				if (npc instanceof Map)
-				{
-					Object n = ((Map<?, ?>) npc).get("name");
-					return n != null ? String.valueOf(n) : "?";
-				}
+				if (npc instanceof Map) { Object n = ((Map<?, ?>) npc).get("name"); return n != null ? String.valueOf(n) : "?"; }
 				return "?";
 			}
 			case "chat_message":
-			{
-				Object msg = evt.get("message");
-				return msg != null ? String.valueOf(msg) : "";
-			}
+				return String.valueOf(evt.getOrDefault("message", ""));
 			default:
 				return type;
 		}
 	}
 
-	private Color getEventColor(String type)
+	// ── Recording dot indicator ─────────────────────────────────────
+	/**
+	 * Small 8×8 red circle indicator, visible only when recording.
+	 * Mimics mockup's recording dot with glow effect.
+	 */
+	private static class RecordingDot extends JPanel
 	{
-		switch (type)
-		{
-			case "hitsplat": return new Color(244, 67, 54);
-			case "menu_clicked": return new Color(76, 175, 80);
-			case "animation_changed": return new Color(33, 150, 243);
-			case "chat_message": return new Color(0, 188, 212);
-			case "npc_spawned": return new Color(255, 193, 7);
-			case "npc_despawned": return new Color(255, 152, 0);
-			case "game_tick": return ColorScheme.LIGHT_GRAY_COLOR;
-			default: return Color.WHITE;
-		}
-	}
+		private boolean active = false;
 
-	private static JPanel sectionHeader(String title)
-	{
-		JPanel header = new JPanel(new BorderLayout());
-		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setMaximumSize(dim(600, 22));
-		header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
-		JLabel label = new JLabel(title);
-		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(label.getFont().deriveFont(Font.BOLD, fontSize(11f)));
-		header.add(label, BorderLayout.WEST);
-		return header;
+		RecordingDot()
+		{
+			setOpaque(false);
+			setPreferredSize(new Dimension(px(12), px(12)));
+			setMaximumSize(new Dimension(px(12), px(12)));
+		}
+
+		void setActive(boolean active)
+		{
+			this.active = active;
+			repaint();
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			super.paintComponent(g);
+			if (!active) return;
+
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+			int w = getWidth(), h = getHeight();
+			int cx = w / 2, cy = h / 2;
+			int r = px(4);
+
+			// Glow
+			g2.setColor(new Color(0xdc, 0x32, 0x32, 60));
+			g2.fillOval(cx - r - 2, cy - r - 2, (r + 2) * 2, (r + 2) * 2);
+
+			// Dot
+			g2.setColor(PanelUtils.REC_RED);
+			g2.fillOval(cx - r, cy - r, r * 2, r * 2);
+
+			g2.dispose();
+		}
 	}
 }

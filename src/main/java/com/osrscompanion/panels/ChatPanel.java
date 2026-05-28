@@ -8,6 +8,7 @@ import net.runelite.client.ui.ColorScheme;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.text.*;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.text.SimpleDateFormat;
@@ -17,6 +18,7 @@ import java.util.Map;
 
 /**
  * Chat tab — real-time chat message viewer with type filtering and auto-scroll.
+ * Uses JTextPane + monospace font for native text selection. Matches mockup's .chat-feed.
  */
 public class ChatPanel extends JPanel
 {
@@ -25,263 +27,284 @@ public class ChatPanel extends JPanel
 	private final JComboBox<String> typeFilter;
 	private final JTextField searchField;
 	private final JCheckBox autoScrollCb;
-	private final JPanel listPanel;
-	private final JScrollPane scrollPane;
+	private final JTextPane textPane;
 	private final JLabel footerLabel = new JLabel("—");
+	private final JLabel subtitleLabel;
 
 	private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
 
-	// Chat type colors
-	private static final Color GAME_COLOR = new Color(244, 67, 54);
-	private static final Color PUBLIC_COLOR = Color.WHITE;
-	private static final Color PRIVATE_COLOR = new Color(0, 188, 212);
-	private static final Color CLAN_COLOR = new Color(76, 175, 80);
-	private static final Color TRADE_COLOR = new Color(156, 39, 176);
-	private static final Color DEFAULT_COLOR = ColorScheme.LIGHT_GRAY_COLOR;
+	// Style names
+	private static final String S_TIME     = "time";
+	private static final String S_SENDER   = "sender";
+	private static final String S_BODY     = "body";
+	private static final String S_BADGE_GAME   = "b_game";
+	private static final String S_BADGE_PUB    = "b_pub";
+	private static final String S_BADGE_PRIV   = "b_priv";
+	private static final String S_BADGE_CLAN   = "b_clan";
+	private static final String S_BADGE_FILTER = "b_filter";
+	private static final String S_BADGE_XP     = "b_xp";
+	private static final String S_BADGE_DEF    = "b_def";
 
 	public ChatPanel(OsrsCompanionPlugin plugin)
 	{
 		this.plugin = plugin;
-		setLayout(new BorderLayout());
-		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
+		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+		setBackground(PanelUtils.PAGE_BG);
+		setBorder(new EmptyBorder(px(16), px(20), px(16), px(20)));
 
-		// === Filter Bar ===
-		JPanel filterBar = new JPanel(new BorderLayout(px(4), 0));
-		filterBar.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		filterBar.setBorder(new EmptyBorder(0, 0, px(4), 0));
+		// Panel header
+		subtitleLabel = new JLabel("0 messages · live tail");
+		subtitleLabel.setForeground(PanelUtils.SUBTITLE_FG);
+		subtitleLabel.setFont(subtitleLabel.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
+		JPanel head = PanelUtils.panelHead("Chat", "");
+		head.remove(1);
+		head.add(subtitleLabel, BorderLayout.EAST);
+		head.setAlignmentX(LEFT_ALIGNMENT);
+		add(head);
+		add(PanelUtils.vgap(10));
+
+		// ── Filter Bar ──────────────────────────────────────────────
+		JPanel filterBar = new JPanel(new BorderLayout(px(8), 0));
+		filterBar.setOpaque(false);
+		filterBar.setAlignmentX(LEFT_ALIGNMENT);
+		filterBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(30)));
 
 		typeFilter = new JComboBox<>(new String[]{
 			"All", "GAMEMESSAGE", "PUBLICCHAT", "PRIVATECHAT",
 			"PRIVATECHATOUT", "FRIENDSCHAT", "CLAN_CHAT", "TRADE"
 		});
 		typeFilter.setFont(typeFilter.getFont().deriveFont(fontSize(10f)));
-		typeFilter.setPreferredSize(dim(90, 22));
+		typeFilter.setPreferredSize(new Dimension(px(100), px(24)));
 		typeFilter.addActionListener(e -> refresh());
 		filterBar.add(typeFilter, BorderLayout.WEST);
 
 		searchField = new JTextField();
-		searchField.setFont(searchField.getFont().deriveFont(fontSize(10f)));
+		searchField.setFont(searchField.getFont().deriveFont(fontSize(11f)));
 		searchField.setToolTipText("Search messages...");
 		searchField.addActionListener(e -> refresh());
 		filterBar.add(searchField, BorderLayout.CENTER);
 
-		JButton copyBtn = new JButton("Copy");
-		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		copyBtn.setFocusPainted(false);
-		copyBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		copyBtn.setForeground(Color.WHITE);
-		copyBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
-		copyBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		JPanel rightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, px(4), 0));
+		rightBtns.setOpaque(false);
+		JButton copyBtn = PanelUtils.btn("Copy");
 		copyBtn.addActionListener(e -> copyMessages());
-		filterBar.add(copyBtn, BorderLayout.EAST);
+		rightBtns.add(copyBtn);
+		filterBar.add(rightBtns, BorderLayout.EAST);
 
-		JPanel topPanel = new JPanel(new BorderLayout());
-		topPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		topPanel.add(filterBar, BorderLayout.CENTER);
+		add(filterBar);
 
 		autoScrollCb = new JCheckBox("Auto-scroll", true);
 		autoScrollCb.setFont(autoScrollCb.getFont().deriveFont(fontSize(9f)));
 		autoScrollCb.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		autoScrollCb.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		autoScrollCb.setBackground(PanelUtils.PAGE_BG);
 		autoScrollCb.setFocusPainted(false);
-		topPanel.add(autoScrollCb, BorderLayout.SOUTH);
+		autoScrollCb.setAlignmentX(LEFT_ALIGNMENT);
+		add(autoScrollCb);
+		add(PanelUtils.vgap(10));
 
-		add(topPanel, BorderLayout.NORTH);
+		// ── Chat feed card ──────────────────────────────────────────
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BorderLayout());
+		card.setAlignmentX(LEFT_ALIGNMENT);
 
-		// === Message List ===
-		listPanel = new JPanel();
-		listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
-		listPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		textPane = new JTextPane();
+		textPane.setEditable(false);
+		textPane.setBackground(PanelUtils.FEED_BG);
+		textPane.setFont(PanelUtils.monoFont(11f));
+		textPane.setForeground(Color.WHITE);
+		initStyles(textPane.getStyledDocument());
+		PanelUtils.installTextPopup(textPane);
 
-		scrollPane = new JScrollPane(listPanel);
-		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		scrollPane.setBorder(null);
-		scrollPane.getVerticalScrollBar().setUnitIncrement(px(16));
-		add(scrollPane, BorderLayout.CENTER);
+		JScrollPane scroll = new JScrollPane(textPane);
+		scroll.setBorder(null);
+		scroll.setBackground(PanelUtils.FEED_BG);
+		scroll.getVerticalScrollBar().setUnitIncrement(px(16));
+		card.add(scroll, BorderLayout.CENTER);
 
-		// === Footer ===
+		add(card);
+		add(PanelUtils.vgap(4));
+
 		footerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		footerLabel.setBorder(new EmptyBorder(px(4), 0, 0, 0));
-		add(footerLabel, BorderLayout.SOUTH);
+		footerLabel.setAlignmentX(LEFT_ALIGNMENT);
+		add(footerLabel);
 	}
 
+	private void initStyles(StyledDocument doc)
+	{
+		Style def = StyleContext.getDefaultStyleContext().getStyle(StyleContext.DEFAULT_STYLE);
+		Font mono = PanelUtils.monoFont(11f);
+
+		Style time = doc.addStyle(S_TIME, def);
+		StyleConstants.setForeground(time, new Color(0x55, 0x55, 0x55));
+		StyleConstants.setFontFamily(time, mono.getFamily());
+		StyleConstants.setFontSize(time, (int) fontSize(10f));
+
+		Style sender = doc.addStyle(S_SENDER, def);
+		StyleConstants.setForeground(sender, PanelUtils.GOLD);
+		StyleConstants.setBold(sender, true);
+		StyleConstants.setFontFamily(sender, mono.getFamily());
+		StyleConstants.setFontSize(sender, (int) fontSize(11f));
+
+		Style body = doc.addStyle(S_BODY, def);
+		StyleConstants.setForeground(body, new Color(0xdd, 0xdd, 0xdd));
+		StyleConstants.setFontFamily(body, mono.getFamily());
+		StyleConstants.setFontSize(body, (int) fontSize(11f));
+
+		// Badge styles per chat type
+		addBadgeStyle(doc, S_BADGE_GAME,   PanelUtils.CHAT_GAME);
+		addBadgeStyle(doc, S_BADGE_PUB,    PanelUtils.CHAT_PUBLIC);
+		addBadgeStyle(doc, S_BADGE_PRIV,   PanelUtils.CHAT_PRIV);
+		addBadgeStyle(doc, S_BADGE_CLAN,   PanelUtils.CHAT_CLAN);
+		addBadgeStyle(doc, S_BADGE_FILTER, PanelUtils.CHAT_FILTER);
+		addBadgeStyle(doc, S_BADGE_XP,     PanelUtils.CHAT_XP);
+		addBadgeStyle(doc, S_BADGE_DEF,    PanelUtils.BADGE_GRAY);
+	}
+
+	private void addBadgeStyle(StyledDocument doc, String name, PanelUtils.BadgeColor bc)
+	{
+		Style def = StyleContext.getDefaultStyleContext().getStyle(StyleContext.DEFAULT_STYLE);
+		Style s = doc.addStyle(name, def);
+		StyleConstants.setForeground(s, bc.fg);
+		StyleConstants.setBackground(s, bc.bg);
+		StyleConstants.setBold(s, true);
+		StyleConstants.setFontSize(s, (int) fontSize(9f));
+	}
+
+	@SuppressWarnings("unchecked")
 	public void refresh()
 	{
 		GameStateServer server = plugin.getApiServer();
 		if (server == null)
 		{
-			listPanel.removeAll();
+			textPane.setText("");
 			footerLabel.setText("API server not available");
-			listPanel.revalidate();
-			listPanel.repaint();
+			subtitleLabel.setText("0 messages");
 			return;
 		}
 
 		List<Map<String, Object>> messages = server.getChatBufferCopy();
-
-		// Apply filters
 		String typeFilterVal = (String) typeFilter.getSelectedItem();
-		String searchVal = searchField.getText().trim().toLowerCase();
+		String search = searchField.getText().trim().toLowerCase();
 
-		listPanel.removeAll();
+		StyledDocument doc = textPane.getStyledDocument();
+		textPane.setText("");
+
 		int shown = 0;
-
-		for (Map<String, Object> msg : messages)
+		try
 		{
-			String type = String.valueOf(msg.getOrDefault("type", ""));
-			String sender = String.valueOf(msg.getOrDefault("sender", ""));
-			String message = String.valueOf(msg.getOrDefault("message", ""));
-
-			// Type filter
-			if (!"All".equals(typeFilterVal) && !type.equals(typeFilterVal))
+			for (Map<String, Object> msg : messages)
 			{
-				continue;
-			}
+				String type = String.valueOf(msg.getOrDefault("type", ""));
+				String text = String.valueOf(msg.getOrDefault("message", ""));
+				String senderName = msg.containsKey("sender") ? String.valueOf(msg.get("sender")) : null;
+				long timestamp = msg.containsKey("timestamp") ? ((Number) msg.get("timestamp")).longValue() : 0;
 
-			// Search filter
-			if (!searchVal.isEmpty()
-				&& !message.toLowerCase().contains(searchVal)
-				&& !sender.toLowerCase().contains(searchVal))
-			{
-				continue;
-			}
+				// Type filter
+				if (!"All".equals(typeFilterVal) && !type.equals(typeFilterVal))
+					continue;
 
-			listPanel.add(createMessageRow(msg));
-			shown++;
+				// Search filter
+				if (!search.isEmpty() && !text.toLowerCase().contains(search)
+					&& (senderName == null || !senderName.toLowerCase().contains(search)))
+					continue;
+
+				// Time
+				String timeStr = timestamp > 0 ? TIME_FORMAT.format(new Date(timestamp)) : "??:??:??";
+				doc.insertString(doc.getLength(), String.format("%-10s", timeStr), doc.getStyle(S_TIME));
+
+				// Type badge
+				String badgeText = " " + shortType(type) + " ";
+				String badgeStyle = getBadgeStyle(type);
+				doc.insertString(doc.getLength(), String.format("%-8s", badgeText), doc.getStyle(badgeStyle));
+				doc.insertString(doc.getLength(), " ", doc.getStyle(S_TIME));
+
+				// Sender
+				if (senderName != null && !senderName.isEmpty())
+				{
+					doc.insertString(doc.getLength(), senderName + ": ", doc.getStyle(S_SENDER));
+				}
+
+				// Body
+				doc.insertString(doc.getLength(), text + "\n", doc.getStyle(S_BODY));
+				shown++;
+			}
 		}
+		catch (BadLocationException ignored) {}
 
+		subtitleLabel.setText(shown + " messages · live tail");
 		footerLabel.setText(shown + " / " + messages.size() + " messages");
 
-		listPanel.revalidate();
-		listPanel.repaint();
-
-		// Auto-scroll to bottom
-		if (autoScrollCb.isSelected())
+		if (autoScrollCb.isSelected() && doc.getLength() > 0)
 		{
-			SwingUtilities.invokeLater(() -> {
-				JScrollBar vBar = scrollPane.getVerticalScrollBar();
-				vBar.setValue(vBar.getMaximum());
-			});
+			textPane.setCaretPosition(doc.getLength());
 		}
 	}
 
-	private JPanel createMessageRow(Map<String, Object> msg)
+	private String shortType(String type)
 	{
-		JPanel row = new JPanel(new BorderLayout());
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.DARK_GRAY_COLOR),
-			new EmptyBorder(px(2), px(4), px(2), px(4))
-		));
-		row.setMaximumSize(dim(600, 32));
-
-		String type = String.valueOf(msg.getOrDefault("type", ""));
-		String sender = String.valueOf(msg.getOrDefault("sender", ""));
-		String message = String.valueOf(msg.getOrDefault("message", ""));
-		long timestamp = msg.containsKey("timestamp") ? ((Number) msg.get("timestamp")).longValue() : 0;
-
-		Color msgColor = getColorForType(type);
-
-		// Time + type badge
-		String timeStr = timestamp > 0 ? TIME_FORMAT.format(new Date(timestamp)) : "??:??:??";
-		JLabel timeLabel = new JLabel(timeStr);
-		timeLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		timeLabel.setFont(timeLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
-		row.add(timeLabel, BorderLayout.WEST);
-
-		// Message text
-		String displayText;
-		if (sender != null && !sender.isEmpty())
+		switch (type)
 		{
-			displayText = "<" + sender + "> " + message;
+			case "GAMEMESSAGE":   return "GAME";
+			case "PUBLICCHAT":    return "PUBLIC";
+			case "PRIVATECHAT":   return "PRIV";
+			case "PRIVATECHATOUT": return "PRIV";
+			case "FRIENDSCHAT":   return "FRIEND";
+			case "CLAN_CHAT":     return "CLAN";
+			case "TRADE":         return "TRADE";
+			default:
+				if (type.contains("XP") || type.contains("xp")) return "XP";
+				if (type.contains("SPAM") || type.contains("FILTER")) return "FILTER";
+				return type.length() > 6 ? type.substring(0, 6) : type;
 		}
-		else
-		{
-			displayText = message;
-		}
-
-		// Strip color tags
-		displayText = displayText.replaceAll("<col=[^>]*>", "").replaceAll("</col>", "");
-
-		if (displayText.length() > 80)
-		{
-			displayText = displayText.substring(0, 77) + "...";
-		}
-
-		JLabel msgLabel = new JLabel(" " + displayText);
-		msgLabel.setForeground(msgColor);
-		msgLabel.setFont(msgLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		msgLabel.setToolTipText(type + ": " + message);
-		row.add(msgLabel, BorderLayout.CENTER);
-
-		return row;
 	}
 
+	private String getBadgeStyle(String type)
+	{
+		switch (type)
+		{
+			case "GAMEMESSAGE":   return S_BADGE_GAME;
+			case "PUBLICCHAT":    return S_BADGE_PUB;
+			case "PRIVATECHAT":
+			case "PRIVATECHATOUT": return S_BADGE_PRIV;
+			case "CLAN_CHAT":
+			case "FRIENDSCHAT":   return S_BADGE_CLAN;
+			case "TRADE":         return S_BADGE_FILTER;
+			default:
+				if (type.contains("XP") || type.contains("xp")) return S_BADGE_XP;
+				if (type.contains("SPAM") || type.contains("FILTER")) return S_BADGE_FILTER;
+				return S_BADGE_DEF;
+		}
+	}
+
+	@SuppressWarnings("unchecked")
 	private void copyMessages()
 	{
+		String selected = textPane.getSelectedText();
+		if (selected != null && !selected.isEmpty())
+		{
+			textPane.copy();
+			return;
+		}
+
 		GameStateServer server = plugin.getApiServer();
 		if (server == null) return;
 
 		List<Map<String, Object>> messages = server.getChatBufferCopy();
-		String typeFilterVal = (String) typeFilter.getSelectedItem();
-		String searchVal = searchField.getText().trim().toLowerCase();
-
 		StringBuilder sb = new StringBuilder();
-		sb.append("=== Chat Messages ===\n");
-
+		sb.append("=== Chat Log (").append(messages.size()).append(") ===\n");
 		for (Map<String, Object> msg : messages)
 		{
 			String type = String.valueOf(msg.getOrDefault("type", ""));
-			String sender = String.valueOf(msg.getOrDefault("sender", ""));
-			String message = String.valueOf(msg.getOrDefault("message", ""));
-
-			if (!"All".equals(typeFilterVal) && !type.equals(typeFilterVal)) continue;
-			if (!searchVal.isEmpty()
-				&& !message.toLowerCase().contains(searchVal)
-				&& !sender.toLowerCase().contains(searchVal)) continue;
-
+			String text = String.valueOf(msg.getOrDefault("message", ""));
+			String sender = msg.containsKey("sender") ? String.valueOf(msg.get("sender")) : "";
 			long ts = msg.containsKey("timestamp") ? ((Number) msg.get("timestamp")).longValue() : 0;
 			String time = ts > 0 ? TIME_FORMAT.format(new Date(ts)) : "??:??:??";
 			sb.append("[").append(time).append("] [").append(type).append("] ");
-			if (!sender.isEmpty()) sb.append("<").append(sender).append("> ");
-			sb.append(message).append("\n");
+			if (!sender.isEmpty()) sb.append(sender).append(": ");
+			sb.append(text).append("\n");
 		}
-
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
 			new StringSelection(sb.toString()), null);
-	}
-
-	private Color getColorForType(String type)
-	{
-		if (type == null)
-		{
-			return DEFAULT_COLOR;
-		}
-
-		switch (type)
-		{
-			case "GAMEMESSAGE":
-			case "ENGINE":
-			case "SPAM":
-				return GAME_COLOR;
-			case "PUBLICCHAT":
-			case "MODCHAT":
-				return PUBLIC_COLOR;
-			case "PRIVATECHAT":
-			case "PRIVATECHATOUT":
-				return PRIVATE_COLOR;
-			case "FRIENDSCHAT":
-			case "CLAN_CHAT":
-			case "CLAN_GUEST_CHAT":
-			case "CLAN_GIM_CHAT":
-				return CLAN_COLOR;
-			case "TRADE":
-			case "TRADE_SENT":
-				return TRADE_COLOR;
-			default:
-				return DEFAULT_COLOR;
-		}
 	}
 }

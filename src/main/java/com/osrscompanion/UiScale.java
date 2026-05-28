@@ -1,116 +1,48 @@
 package com.osrscompanion;
 
 import java.awt.Dimension;
-import java.awt.GraphicsConfiguration;
-import java.awt.GraphicsDevice;
-import java.awt.GraphicsEnvironment;
-import java.awt.Toolkit;
-import java.awt.geom.AffineTransform;
 
 /**
- * DPI-aware scaling utility for the GUI.
+ * DPI scaling utility for the GUI.
  *
- * Detects the OS display scaling factor and screen resolution, then provides
- * helper methods so every font size, component dimension, and border inset
- * scales correctly on HiDPI and high-resolution displays.
+ * Modern Java 11+ handles DPI scaling natively via the JVM, so we default
+ * to SCALE = 1.0 (no manual scaling). The user can override via the config
+ * if their setup needs it, but auto-detect is gone — it caused double-scaling
+ * and pixelated text on HiDPI monitors.
  *
- * On high-resolution monitors without OS scaling (e.g. 2560x1440 at 100%),
- * the auto mode applies a heuristic scale based on horizontal resolution
- * so the UI remains readable.
+ * {@link #px(int)}, {@link #fontSize(float)}, and {@link #dim(int,int)} are
+ * kept as pass-through helpers so call sites don't need mass-editing if we
+ * ever reintroduce optional scaling.
  */
 public final class UiScale
 {
-	/**
-	 * The active display scale factor (1.0 = 96 DPI / 100% / 1920px baseline).
-	 * Set via {@link #init(double)} before any UI is constructed.
-	 */
+	/** Pixel + font scale for the standalone frame. */
 	public static float SCALE = 1.0f;
 
+	/** Font-only scale for the fixed-width sidebar panel. */
+	public static float FONT_SCALE = 1.0f;
+
 	/**
-	 * Initialise the scale factor.
+	 * Initialise scale factors.
 	 *
-	 * @param configScale the user's config value:
-	 *   0  = auto-detect (uses OS DPI, falling back to resolution heuristic)
-	 *   >0 = explicit multiplier (e.g. 1.25, 1.5, 2.0)
+	 * @param configScale 0 or 1.0 = no scaling (recommended default).
+	 *                    > 1.0 = explicit override (e.g. 1.25, 1.5).
 	 */
 	public static void init(double configScale)
 	{
-		if (configScale > 0)
+		if (configScale > 1.01)
 		{
-			// Explicit user override
 			SCALE = (float) configScale;
 		}
 		else
 		{
-			// Auto-detect
-			SCALE = detectScale();
+			SCALE = 1.0f;
 		}
 
-		// Clamp to reasonable range
-		if (SCALE < 1.0f) SCALE = 1.0f;
 		if (SCALE > 4.0f) SCALE = 4.0f;
-	}
 
-	private static float detectScale()
-	{
-		float osScale = 1.0f;
-
-		// 1) Try AffineTransform (accurate on modern Windows/macOS with DPI awareness)
-		try
-		{
-			GraphicsDevice gd = GraphicsEnvironment
-				.getLocalGraphicsEnvironment()
-				.getDefaultScreenDevice();
-			GraphicsConfiguration gc = gd.getDefaultConfiguration();
-			AffineTransform tx = gc.getDefaultTransform();
-			osScale = (float) tx.getScaleX();
-		}
-		catch (Throwable ignored) {}
-
-		// 2) Cross-check with Toolkit DPI (96 = 100%)
-		if (osScale <= 1.0f)
-		{
-			try
-			{
-				int dpi = Toolkit.getDefaultToolkit().getScreenResolution();
-				float tkScale = dpi / 96.0f;
-				if (tkScale > osScale)
-				{
-					osScale = tkScale;
-				}
-			}
-			catch (Throwable ignored) {}
-		}
-
-		// 3) If OS reports 1.0 (no scaling), apply a resolution-based heuristic
-		//    so high-res monitors (2560+) don't render the UI too small.
-		if (osScale <= 1.01f)
-		{
-			try
-			{
-				Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-				int w = screenSize.width;
-
-				// Scale relative to 1920px baseline:
-				//   1920 → 1.0   (Full HD — no boost)
-				//   2560 → 1.25  (QHD / 1440p)
-				//   3440 → 1.5   (ultrawide QHD)
-				//   3840 → 1.65  (4K)
-				if (w > 1920)
-				{
-					float resScale = w / 1920.0f;
-					// Dampen slightly so we don't over-scale
-					resScale = 1.0f + (resScale - 1.0f) * 0.75f;
-					if (resScale > osScale)
-					{
-						osScale = resScale;
-					}
-				}
-			}
-			catch (Throwable ignored) {}
-		}
-
-		return osScale;
+		FONT_SCALE = 1.0f + (SCALE - 1.0f) * 0.85f;
+		if (FONT_SCALE < 1.0f) FONT_SCALE = 1.0f;
 	}
 
 	/** Scale a pixel value. */
@@ -123,6 +55,12 @@ public final class UiScale
 	public static float fontSize(float base)
 	{
 		return base * SCALE;
+	}
+
+	/** Sidebar: scale a font more gently than the full UI scale. */
+	public static float sideFont(float base)
+	{
+		return base * FONT_SCALE;
 	}
 
 	/** Scale a dimension. */

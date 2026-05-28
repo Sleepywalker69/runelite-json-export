@@ -8,12 +8,15 @@ import net.runelite.client.ui.ColorScheme;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.text.*;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.util.List;
 
 /**
  * Action Log tab — scrollable, filterable view of the ActionTracker ring buffer.
+ * Uses JTextPane + StyledDocument for native text selection and Ctrl+C.
+ * Visual style matches mockup's action-table with semi-transparent source badges.
  */
 public class ActionLogPanel extends JPanel
 {
@@ -21,65 +24,148 @@ public class ActionLogPanel extends JPanel
 
 	private final JComboBox<String> sourceFilter;
 	private final JTextField searchField;
-	private final JPanel listPanel;
+	private final JTextPane textPane;
 	private final JLabel footerLabel = new JLabel("—");
+	private final JLabel subtitleLabel;
 
-	private static final Color MENU_COLOR = new Color(76, 175, 80);   // green
-	private static final Color SCRIPT_COLOR = new Color(33, 150, 243);  // blue
-	private static final Color INFERRED_COLOR = new Color(255, 193, 7); // yellow
+	// StyledDocument styles
+	private static final String STYLE_TICK    = "tick";
+	private static final String STYLE_ACTION  = "action";
+	private static final String STYLE_TARGET  = "target";
+	private static final String STYLE_DETAIL  = "detail";
+	private static final String STYLE_BADGE_MENU = "badge_menu";
+	private static final String STYLE_BADGE_SCRIPT = "badge_script";
+	private static final String STYLE_BADGE_INFER  = "badge_infer";
+	private static final String STYLE_HEADER  = "header";
 
 	public ActionLogPanel(OsrsCompanionPlugin plugin)
 	{
 		this.plugin = plugin;
-		setLayout(new BorderLayout());
-		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
+		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+		setBackground(PanelUtils.PAGE_BG);
+		setBorder(new EmptyBorder(px(16), px(20), px(16), px(20)));
 
-		// === Filter Bar ===
-		JPanel filterBar = new JPanel(new BorderLayout(px(4), 0));
-		filterBar.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		filterBar.setBorder(new EmptyBorder(0, 0, px(4), 0));
+		// Panel header
+		subtitleLabel = new JLabel("— / — in ring buffer");
+		subtitleLabel.setForeground(PanelUtils.SUBTITLE_FG);
+		subtitleLabel.setFont(subtitleLabel.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
+
+		JPanel head = PanelUtils.panelHead("Actions", "");
+		// Replace the subtitle with our dynamic one
+		head.remove(1); // remove the static subtitle
+		head.add(subtitleLabel, BorderLayout.EAST);
+		head.setAlignmentX(LEFT_ALIGNMENT);
+		add(head);
+		add(PanelUtils.vgap(10));
+
+		// ── Filter Bar ──────────────────────────────────────────────
+		JPanel filterBar = new JPanel(new BorderLayout(px(8), 0));
+		filterBar.setOpaque(false);
+		filterBar.setAlignmentX(LEFT_ALIGNMENT);
+		filterBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(30)));
+
+		// Source filter buttons
+		JPanel sourceRow = new JPanel(new FlowLayout(FlowLayout.LEFT, px(4), 0));
+		sourceRow.setOpaque(false);
 
 		sourceFilter = new JComboBox<>(new String[]{"All", "menu", "script", "inferred"});
 		sourceFilter.setFont(sourceFilter.getFont().deriveFont(fontSize(10f)));
-		sourceFilter.setPreferredSize(dim(75, 22));
+		sourceFilter.setPreferredSize(new Dimension(px(85), px(24)));
 		sourceFilter.addActionListener(e -> refresh());
-		filterBar.add(sourceFilter, BorderLayout.WEST);
+		sourceRow.add(sourceFilter);
+
+		filterBar.add(sourceRow, BorderLayout.WEST);
 
 		searchField = new JTextField();
-		searchField.setFont(searchField.getFont().deriveFont(fontSize(10f)));
-		searchField.setToolTipText("Search actions...");
+		searchField.setFont(searchField.getFont().deriveFont(fontSize(11f)));
+		searchField.setToolTipText("filter…");
 		searchField.addActionListener(e -> refresh());
 		filterBar.add(searchField, BorderLayout.CENTER);
 
-		JButton copyBtn = new JButton("Copy");
-		copyBtn.setFont(copyBtn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		copyBtn.setFocusPainted(false);
-		copyBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		copyBtn.setForeground(Color.WHITE);
-		copyBtn.setBorder(new EmptyBorder(px(2), px(8), px(2), px(8)));
-		copyBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		JPanel rightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, px(4), 0));
+		rightBtns.setOpaque(false);
+		JButton copyBtn = PanelUtils.btn("Copy");
 		copyBtn.addActionListener(e -> copyActions());
-		filterBar.add(copyBtn, BorderLayout.EAST);
+		rightBtns.add(copyBtn);
+		filterBar.add(rightBtns, BorderLayout.EAST);
 
-		add(filterBar, BorderLayout.NORTH);
+		add(filterBar);
+		add(PanelUtils.vgap(10));
 
-		// === Action List ===
-		listPanel = new JPanel();
-		listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
-		listPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		// ── Action table in a card ──────────────────────────────────
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BorderLayout());
+		card.setAlignmentX(LEFT_ALIGNMENT);
 
-		JScrollPane scrollPane = new JScrollPane(listPanel);
-		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		scrollPane.setBorder(null);
-		scrollPane.getVerticalScrollBar().setUnitIncrement(px(16));
-		add(scrollPane, BorderLayout.CENTER);
+		textPane = new JTextPane();
+		textPane.setEditable(false);
+		textPane.setBackground(PanelUtils.CARD_BG);
+		textPane.setFont(PanelUtils.monoFont(11f));
+		textPane.setForeground(Color.WHITE);
+		initStyles(textPane.getStyledDocument());
+		PanelUtils.installTextPopup(textPane);
 
-		// === Footer ===
+		JScrollPane scroll = new JScrollPane(textPane);
+		scroll.setBorder(null);
+		scroll.setBackground(PanelUtils.CARD_BG);
+		scroll.getVerticalScrollBar().setUnitIncrement(px(16));
+		card.add(scroll, BorderLayout.CENTER);
+
+		add(card);
+		add(PanelUtils.vgap(4));
+
+		// ── Footer ──────────────────────────────────────────────────
 		footerLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		footerLabel.setFont(footerLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		footerLabel.setBorder(new EmptyBorder(px(4), 0, 0, 0));
-		add(footerLabel, BorderLayout.SOUTH);
+		footerLabel.setAlignmentX(LEFT_ALIGNMENT);
+		add(footerLabel);
+	}
+
+	private void initStyles(StyledDocument doc)
+	{
+		Style def = StyleContext.getDefaultStyleContext().getStyle(StyleContext.DEFAULT_STYLE);
+
+		Style tick = doc.addStyle(STYLE_TICK, def);
+		StyleConstants.setForeground(tick, PanelUtils.MUTED);
+		StyleConstants.setFontFamily(tick, PanelUtils.monoFont(11f).getFamily());
+		StyleConstants.setFontSize(tick, (int) fontSize(11f));
+
+		Style action = doc.addStyle(STYLE_ACTION, def);
+		StyleConstants.setForeground(action, new Color(0xe0, 0xe0, 0xe0));
+		StyleConstants.setFontSize(action, (int) fontSize(11f));
+
+		Style target = doc.addStyle(STYLE_TARGET, def);
+		StyleConstants.setForeground(target, Color.WHITE);
+		StyleConstants.setFontSize(target, (int) fontSize(11f));
+
+		Style detail = doc.addStyle(STYLE_DETAIL, def);
+		StyleConstants.setForeground(detail, PanelUtils.MUTED);
+		StyleConstants.setFontSize(detail, (int) fontSize(11f));
+
+		// Badge styles with semi-transparent backgrounds
+		Style menuBadge = doc.addStyle(STYLE_BADGE_MENU, def);
+		StyleConstants.setForeground(menuBadge, PanelUtils.BADGE_GREEN.fg);
+		StyleConstants.setBackground(menuBadge, PanelUtils.BADGE_GREEN.bg);
+		StyleConstants.setBold(menuBadge, true);
+		StyleConstants.setFontSize(menuBadge, (int) fontSize(9f));
+
+		Style scriptBadge = doc.addStyle(STYLE_BADGE_SCRIPT, def);
+		StyleConstants.setForeground(scriptBadge, PanelUtils.BADGE_BLUE.fg);
+		StyleConstants.setBackground(scriptBadge, PanelUtils.BADGE_BLUE.bg);
+		StyleConstants.setBold(scriptBadge, true);
+		StyleConstants.setFontSize(scriptBadge, (int) fontSize(9f));
+
+		Style inferBadge = doc.addStyle(STYLE_BADGE_INFER, def);
+		StyleConstants.setForeground(inferBadge, PanelUtils.BADGE_YELLOW.fg);
+		StyleConstants.setBackground(inferBadge, PanelUtils.BADGE_YELLOW.bg);
+		StyleConstants.setBold(inferBadge, true);
+		StyleConstants.setFontSize(inferBadge, (int) fontSize(9f));
+
+		// Header row style
+		Style header = doc.addStyle(STYLE_HEADER, def);
+		StyleConstants.setForeground(header, ColorScheme.BRAND_ORANGE);
+		StyleConstants.setBold(header, true);
+		StyleConstants.setFontSize(header, (int) fontSize(10f));
 	}
 
 	public void refresh()
@@ -87,10 +173,9 @@ public class ActionLogPanel extends JPanel
 		ActionTracker tracker = plugin.getActionTracker();
 		if (tracker == null)
 		{
-			listPanel.removeAll();
+			textPane.setText("");
 			footerLabel.setText("Action tracker not available");
-			listPanel.revalidate();
-			listPanel.repaint();
+			subtitleLabel.setText("— / — in ring buffer");
 			return;
 		}
 
@@ -101,83 +186,83 @@ public class ActionLogPanel extends JPanel
 
 		List<ActionTracker.TrackedAction> actions = tracker.getActions(100, sourceArg, searchArg);
 
-		listPanel.removeAll();
+		subtitleLabel.setText(tracker.filled() + " / " + tracker.capacity() + " in ring buffer");
 
-		// Show newest first
-		for (int i = actions.size() - 1; i >= 0; i--)
+		StyledDocument doc = textPane.getStyledDocument();
+		textPane.setText("");
+
+		try
 		{
-			ActionTracker.TrackedAction action = actions.get(i);
-			listPanel.add(createActionRow(action));
+			// Header row
+			doc.insertString(doc.getLength(), "TICK    SRC       ACTION              TARGET              DETAIL\n",
+				doc.getStyle(STYLE_HEADER));
+
+			// Action rows (newest first)
+			for (int i = actions.size() - 1; i >= 0; i--)
+			{
+				ActionTracker.TrackedAction a = actions.get(i);
+				insertActionRow(doc, a);
+			}
 		}
+		catch (BadLocationException ignored) {}
 
 		footerLabel.setText(String.format("%d shown | %d / %d in buffer",
 			actions.size(), tracker.filled(), tracker.capacity()));
 
-		listPanel.revalidate();
-		listPanel.repaint();
+		textPane.setCaretPosition(0);
 	}
 
-	private JPanel createActionRow(ActionTracker.TrackedAction action)
+	private void insertActionRow(StyledDocument doc, ActionTracker.TrackedAction a) throws BadLocationException
 	{
-		JPanel row = new JPanel(new BorderLayout());
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.DARK_GRAY_COLOR),
-			new EmptyBorder(px(2), px(4), px(2), px(4))
-		));
-		row.setMaximumSize(dim(600, 36));
+		// Tick
+		doc.insertString(doc.getLength(), String.format("%-7d ", a.tick), doc.getStyle(STYLE_TICK));
 
-		// Source badge + tick
-		Color badgeColor;
-		switch (action.source)
+		// Source badge
+		String badgeStyle;
+		switch (a.source)
 		{
-			case "menu":
-				badgeColor = MENU_COLOR;
-				break;
-			case "script":
-				badgeColor = SCRIPT_COLOR;
-				break;
-			case "inferred":
-				badgeColor = INFERRED_COLOR;
-				break;
-			default:
-				badgeColor = Color.GRAY;
+			case "menu":     badgeStyle = STYLE_BADGE_MENU;   break;
+			case "script":   badgeStyle = STYLE_BADGE_SCRIPT; break;
+			case "inferred": badgeStyle = STYLE_BADGE_INFER;  break;
+			default:         badgeStyle = STYLE_TICK;
 		}
+		String srcLabel = String.format(" %-6s ", a.source);
+		doc.insertString(doc.getLength(), srcLabel, doc.getStyle(badgeStyle));
+		doc.insertString(doc.getLength(), "  ", doc.getStyle(STYLE_TICK));
 
-		JLabel badge = new JLabel(" " + action.source.substring(0, 1).toUpperCase() + " ");
-		badge.setOpaque(true);
-		badge.setBackground(badgeColor);
-		badge.setForeground(Color.WHITE);
-		badge.setFont(badge.getFont().deriveFont(Font.BOLD, fontSize(9f)));
-		badge.setBorder(new EmptyBorder(px(1), px(3), px(1), px(3)));
+		// Action
+		String actionText = a.action != null ? a.action : "";
+		if (actionText.length() > 20) actionText = actionText.substring(0, 17) + "...";
+		doc.insertString(doc.getLength(), String.format("%-20s", actionText), doc.getStyle(STYLE_ACTION));
 
-		JLabel tickLabel = new JLabel(" +" + action.tick + " ");
-		tickLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		tickLabel.setFont(tickLabel.getFont().deriveFont(Font.PLAIN, fontSize(9f)));
+		// Target
+		String targetText = a.target != null ? a.target : "—";
+		if (targetText.length() > 20) targetText = targetText.substring(0, 17) + "...";
+		doc.insertString(doc.getLength(), String.format("%-20s", targetText), doc.getStyle(STYLE_TARGET));
 
-		JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, px(2), 0));
-		leftPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		leftPanel.add(badge);
-		leftPanel.add(tickLabel);
-		row.add(leftPanel, BorderLayout.WEST);
-
-		// Action text
-		String actionText = action.action;
-		if (actionText.length() > 60)
+		// Detail (remaining info from details map)
+		String detail = "";
+		if (a.details != null && !a.details.isEmpty())
 		{
-			actionText = actionText.substring(0, 57) + "...";
+			detail = a.details.toString();
 		}
-		JLabel actionLabel = new JLabel(actionText);
-		actionLabel.setForeground(Color.WHITE);
-		actionLabel.setFont(actionLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		actionLabel.setToolTipText(action.action + " | " + action.target);
-		row.add(actionLabel, BorderLayout.CENTER);
+		if (detail.length() > 30) detail = detail.substring(0, 27) + "...";
+		doc.insertString(doc.getLength(), detail, doc.getStyle(STYLE_DETAIL));
 
-		return row;
+		doc.insertString(doc.getLength(), "\n", doc.getStyle(STYLE_TICK));
 	}
 
 	private void copyActions()
 	{
+		// If there's selected text, copy just that
+		String selected = textPane.getSelectedText();
+		if (selected != null && !selected.isEmpty())
+		{
+			textPane.copy();
+			return;
+		}
+
+		// Otherwise copy all as plain text
 		ActionTracker tracker = plugin.getActionTracker();
 		if (tracker == null) return;
 
@@ -189,14 +274,12 @@ public class ActionLogPanel extends JPanel
 		List<ActionTracker.TrackedAction> actions = tracker.getActions(100, sourceArg, searchArg);
 		StringBuilder sb = new StringBuilder();
 		sb.append("=== Action Log (").append(actions.size()).append(") ===\n");
-
 		for (int i = actions.size() - 1; i >= 0; i--)
 		{
 			ActionTracker.TrackedAction a = actions.get(i);
 			sb.append("[+").append(a.tick).append("] [").append(a.source).append("] ")
-			  .append(a.action).append(" | ").append(a.target).append("\n");
+				.append(a.action).append(" | ").append(a.target).append("\n");
 		}
-
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
 			new StringSelection(sb.toString()), null);
 	}

@@ -2,6 +2,7 @@ package com.osrscompanion.panels;
 
 import static com.osrscompanion.UiScale.*;
 
+import com.osrscompanion.ActionTracker;
 import com.osrscompanion.GameStateServer;
 import com.osrscompanion.OsrsCompanionConfig;
 import com.osrscompanion.OsrsCompanionPlugin;
@@ -20,6 +21,7 @@ import java.awt.datatransfer.StringSelection;
 
 /**
  * Dashboard tab — at-a-glance player status, API status, quick actions, session summary.
+ * Layout matches mockup: grid-2 top (Player + API), grid-3 bottom (Recent actions, Skill deltas, Last save).
  */
 public class DashboardPanel extends JPanel
 {
@@ -27,27 +29,34 @@ public class DashboardPanel extends JPanel
 	private final OsrsCompanionConfig config;
 	private final OsrsCompanionPlugin plugin;
 
-	// Player status labels
-	private final JLabel playerNameLabel = styledLabel("Not logged in");
-	private final JLabel worldLabel = styledLabel("—");
-	private final JLabel positionLabel = styledLabel("—");
-	private final JLabel combatLabel = styledLabel("—");
+	// Player KV values
+	private final JLabel playerName  = PanelUtils.val("Not logged in");
+	private final JLabel worldVal    = PanelUtils.val("—");
+	private final JLabel combatVal   = PanelUtils.val("—");
+	private final JLabel positionVal = PanelUtils.val("—");
 
-	// Bars
-	private final StatusBar hpBar = new StatusBar(new Color(220, 50, 50), "HP");
-	private final StatusBar prayerBar = new StatusBar(new Color(50, 180, 220), "Prayer");
-	private final StatusBar runBar = new StatusBar(new Color(220, 190, 50), "Run");
-	private final StatusBar specBar = new StatusBar(new Color(50, 220, 100), "Spec");
+	// Status bars
+	private final PanelUtils.StatusBar hpBar     = new PanelUtils.StatusBar(PanelUtils.HP_RED);
+	private final PanelUtils.StatusBar prayerBar = new PanelUtils.StatusBar(PanelUtils.PRAY_BLUE);
+	private final PanelUtils.StatusBar runBar    = new PanelUtils.StatusBar(PanelUtils.RUN_YELLOW);
+	private final PanelUtils.StatusBar specBar   = new PanelUtils.StatusBar(PanelUtils.SPEC_GREEN);
 
-	// API status
-	private final JLabel apiStatusLabel = styledLabel("—");
-	private final JLabel sseClientsLabel = styledLabel("—");
+	// API KV values
+	private final JLabel apiStatus    = PanelUtils.val("—", PanelUtils.GREEN);
+	private final JLabel sseClients   = PanelUtils.val("—");
+	private final JLabel recordingVal = PanelUtils.val("Off", PanelUtils.MUTED);
+	private final JLabel uptimeVal    = PanelUtils.val("—");
+	private final JLabel tickBufVal   = PanelUtils.val("—");
+	private final JLabel actionBufVal = PanelUtils.val("—");
+	private final JLabel xpSessionVal = PanelUtils.val("—");
 
-	// Session summary
-	private final JLabel sessionTimeLabel = styledLabel("—");
-	private final JLabel totalXpLabel = styledLabel("—");
-	private final JLabel tickBufferLabel = styledLabel("—");
-	private final JLabel actionBufferLabel = styledLabel("—");
+	// Bottom row cards (dynamic content)
+	private final JPanel recentActionsContent = new JPanel();
+	private final JPanel skillDeltasContent   = new JPanel();
+	private final JLabel saveStatus = PanelUtils.val("—", PanelUtils.GREEN);
+	private final JLabel savePath   = PanelUtils.val("—");
+	private final JLabel saveSize   = PanelUtils.val("—");
+	private final JLabel saveWhen   = PanelUtils.val("—");
 
 	public DashboardPanel(Client client, OsrsCompanionConfig config, OsrsCompanionPlugin plugin)
 	{
@@ -55,170 +64,340 @@ public class DashboardPanel extends JPanel
 		this.config = config;
 		this.plugin = plugin;
 
-		setLayout(new BorderLayout());
-		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setBorder(new EmptyBorder(px(12), px(32), px(12), px(32)));
+		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+		setBackground(PanelUtils.PAGE_BG);
+		setBorder(new EmptyBorder(px(16), px(20), px(16), px(20)));
 
-		// Two-column layout for wider windows
-		JPanel columns = new JPanel(new GridLayout(1, 2, px(24), 0));
-		columns.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		// Panel header
+		JPanel head = PanelUtils.panelHead("Dashboard", "refreshed every 3 ticks · 1.8s");
+		head.setAlignmentX(LEFT_ALIGNMENT);
+		add(head);
+		add(PanelUtils.vgap(14));
 
-		// === Left Column: Player Vitals ===
-		JPanel leftCol = new JPanel();
-		leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
-		leftCol.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		// ── Top row: grid-2 (Player + API) ──────────────────────────
+		JPanel playerCard = buildPlayerCard();
+		JPanel apiCard    = buildApiCard();
+		JPanel topRow = PanelUtils.grid2(playerCard, apiCard);
+		topRow.setAlignmentX(LEFT_ALIGNMENT);
+		topRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(320)));
+		add(topRow);
+		add(PanelUtils.vgap(14));
 
-		leftCol.add(sectionHeader("Player"));
-		leftCol.add(labelRow("Name:", playerNameLabel));
-		leftCol.add(labelRow("World:", worldLabel));
-		leftCol.add(labelRow("Combat:", combatLabel));
-		leftCol.add(labelRow("Position:", positionLabel));
-		leftCol.add(Box.createVerticalStrut(px(6)));
-		leftCol.add(hpBar);
-		leftCol.add(Box.createVerticalStrut(px(3)));
-		leftCol.add(prayerBar);
-		leftCol.add(Box.createVerticalStrut(px(3)));
-		leftCol.add(runBar);
-		leftCol.add(Box.createVerticalStrut(px(3)));
-		leftCol.add(specBar);
-		leftCol.add(Box.createVerticalGlue());
+		// ── Bottom row: grid-3 (Recent actions, Skill deltas, Last save)
+		JPanel actionsCard   = buildRecentActionsCard();
+		JPanel deltasCard    = buildSkillDeltasCard();
+		JPanel saveCard      = buildLastSaveCard();
+		JPanel bottomRow = PanelUtils.grid3(actionsCard, deltasCard, saveCard);
+		bottomRow.setAlignmentX(LEFT_ALIGNMENT);
+		bottomRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(240)));
+		add(bottomRow);
 
-		// === Right Column: Status + Actions ===
-		JPanel rightCol = new JPanel();
-		rightCol.setLayout(new BoxLayout(rightCol, BoxLayout.Y_AXIS));
-		rightCol.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		rightCol.add(sectionHeader("API Server"));
-		rightCol.add(labelRow("Status:", apiStatusLabel));
-		rightCol.add(labelRow("SSE Clients:", sseClientsLabel));
-
-		rightCol.add(Box.createVerticalStrut(px(10)));
-
-		rightCol.add(sectionHeader("Session"));
-		rightCol.add(labelRow("Uptime:", sessionTimeLabel));
-		rightCol.add(labelRow("XP Gained:", totalXpLabel));
-		rightCol.add(labelRow("Tick Buffer:", tickBufferLabel));
-		rightCol.add(labelRow("Actions:", actionBufferLabel));
-
-		rightCol.add(Box.createVerticalStrut(px(10)));
-
-		rightCol.add(sectionHeader("Quick Actions"));
-		JPanel buttonRow = new JPanel(new GridLayout(1, 3, px(4), 0));
-		buttonRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		buttonRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(28)));
-
-		JButton saveBtn = actionButton("Save");
-		saveBtn.addActionListener(e -> plugin.triggerSave());
-
-		JButton snapshotBtn = actionButton("Snapshot");
-		snapshotBtn.addActionListener(e -> copyDebugSnapshot());
-
-		JButton screenshotBtn = actionButton("Screenshot");
-		screenshotBtn.addActionListener(e -> takeScreenshot());
-
-		buttonRow.add(saveBtn);
-		buttonRow.add(snapshotBtn);
-		buttonRow.add(screenshotBtn);
-		rightCol.add(buttonRow);
-
-		rightCol.add(Box.createVerticalGlue());
-
-		columns.add(leftCol);
-		columns.add(rightCol);
-
-		add(columns, BorderLayout.CENTER);
+		add(Box.createVerticalGlue());
 	}
 
+	// ── Player Card ─────────────────────────────────────────────────
+	private JPanel buildPlayerCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
+		card.add(PanelUtils.cardHeader("Player"));
+		card.add(PanelUtils.vgap(10));
+		card.add(PanelUtils.kvRow("Name",     playerName));
+		card.add(PanelUtils.kvRow("World",    worldVal));
+		card.add(PanelUtils.kvRow("Combat",   combatVal));
+		card.add(PanelUtils.kvRow("Position", positionVal));
+		card.add(PanelUtils.vgap(6));
+		card.add(hpBar);
+		card.add(PanelUtils.vgap(6));
+		card.add(prayerBar);
+		card.add(PanelUtils.vgap(6));
+		card.add(runBar);
+		card.add(PanelUtils.vgap(6));
+		card.add(specBar);
+
+		return card;
+	}
+
+	// ── API Server Card ─────────────────────────────────────────────
+	private JPanel buildApiCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
+		card.add(PanelUtils.cardHeader("API Server"));
+		card.add(PanelUtils.vgap(10));
+		card.add(PanelUtils.kvRow("Status",         apiStatus));
+		card.add(PanelUtils.kvRow("SSE clients",    sseClients));
+		card.add(PanelUtils.kvRow("Recording",      recordingVal));
+		card.add(PanelUtils.kvRow("Uptime",         uptimeVal));
+		card.add(PanelUtils.kvRow("Tick buffer",    tickBufVal));
+		card.add(PanelUtils.kvRow("Action buffer",  actionBufVal));
+		card.add(PanelUtils.kvRow("XP this session", xpSessionVal));
+		card.add(PanelUtils.vgap(12));
+
+		JButton saveBtn = PanelUtils.btnPrimary("Save now");
+		saveBtn.addActionListener(e -> plugin.triggerSave());
+		JButton snapBtn = PanelUtils.btn("Snapshot");
+		snapBtn.addActionListener(e -> copyDebugSnapshot());
+		JButton ssBtn = PanelUtils.btn("Screenshot");
+		ssBtn.addActionListener(e -> takeScreenshot());
+
+		JPanel btnRow = PanelUtils.btnRow(saveBtn, snapBtn, ssBtn);
+		btnRow.setAlignmentX(LEFT_ALIGNMENT);
+		card.add(btnRow);
+
+		return card;
+	}
+
+	// ── Recent Actions Card ─────────────────────────────────────────
+	private JPanel buildRecentActionsCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.add(PanelUtils.cardHeader("Recent actions"));
+		card.add(PanelUtils.vgap(10));
+		recentActionsContent.setLayout(new BoxLayout(recentActionsContent, BoxLayout.Y_AXIS));
+		recentActionsContent.setOpaque(false);
+		card.add(recentActionsContent);
+		return card;
+	}
+
+	// ── Skill Deltas Card ───────────────────────────────────────────
+	private JPanel buildSkillDeltasCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.add(PanelUtils.cardHeader("Skill deltas"));
+		card.add(PanelUtils.vgap(10));
+		skillDeltasContent.setLayout(new BoxLayout(skillDeltasContent, BoxLayout.Y_AXIS));
+		skillDeltasContent.setOpaque(false);
+		card.add(skillDeltasContent);
+		return card;
+	}
+
+	// ── Last Save Card ──────────────────────────────────────────────
+	private JPanel buildLastSaveCard()
+	{
+		JPanel card = PanelUtils.card();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.add(PanelUtils.cardHeader("Last save"));
+		card.add(PanelUtils.vgap(10));
+		card.add(PanelUtils.kvRow("Status", saveStatus));
+		card.add(PanelUtils.kvRow("Path",   savePath));
+		card.add(PanelUtils.kvRow("Size",   saveSize));
+		card.add(PanelUtils.kvRow("When",   saveWhen));
+		return card;
+	}
+
+	// ── Refresh ─────────────────────────────────────────────────────
 	public void refresh()
 	{
+		// Player vitals
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
-			playerNameLabel.setText("Not logged in");
-			worldLabel.setText("—");
-			combatLabel.setText("—");
-			positionLabel.setText("—");
-			hpBar.update(0, 1);
-			prayerBar.update(0, 1);
-			runBar.update(0, 100);
-			specBar.update(0, 100);
-			return;
+			playerName.setText("Not logged in");
+			worldVal.setText("—");
+			combatVal.setText("—");
+			positionVal.setText("—");
+			hpBar.update(0, 1, "HP");
+			prayerBar.update(0, 1, "Prayer");
+			runBar.update(0, 100, "Run");
+			specBar.update(0, 100, "Spec");
 		}
-
-		Player local = client.getLocalPlayer();
-		if (local != null)
+		else
 		{
-			playerNameLabel.setText(local.getName() != null ? local.getName() : "Unknown");
-			combatLabel.setText(String.valueOf(local.getCombatLevel()));
-			WorldPoint wp = local.getWorldLocation();
-			if (wp != null)
+			Player local = client.getLocalPlayer();
+			if (local != null)
 			{
-				positionLabel.setText(wp.getX() + ", " + wp.getY() + " (P" + wp.getPlane() + ")");
+				playerName.setText(local.getName() != null ? local.getName() : "Unknown");
+				combatVal.setText(String.valueOf(local.getCombatLevel()));
+				WorldPoint wp = local.getWorldLocation();
+				if (wp != null)
+				{
+					positionVal.setText(wp.getX() + ", " + wp.getY() + " (P" + wp.getPlane() + ")");
+				}
 			}
+			worldVal.setText("W" + client.getWorld());
+
+			int hp = client.getBoostedSkillLevel(Skill.HITPOINTS);
+			int maxHp = client.getRealSkillLevel(Skill.HITPOINTS);
+			hpBar.update(hp, maxHp, "HP");
+
+			int prayer = client.getBoostedSkillLevel(Skill.PRAYER);
+			int maxPrayer = client.getRealSkillLevel(Skill.PRAYER);
+			prayerBar.update(prayer, maxPrayer, "Prayer");
+
+			int run = client.getEnergy() / 100;
+			runBar.update(run, 100, "Run");
+
+			int spec = client.getVarpValue(48) / 10;
+			specBar.update(spec, 100, "Spec");
 		}
-
-		worldLabel.setText("W" + client.getWorld());
-
-		int hp = client.getBoostedSkillLevel(Skill.HITPOINTS);
-		int maxHp = client.getRealSkillLevel(Skill.HITPOINTS);
-		hpBar.update(hp, maxHp);
-
-		int prayer = client.getBoostedSkillLevel(Skill.PRAYER);
-		int maxPrayer = client.getRealSkillLevel(Skill.PRAYER);
-		prayerBar.update(prayer, maxPrayer);
-
-		int run = client.getEnergy() / 100;
-		runBar.update(run, 100);
-
-		int spec = client.getVarpValue(48) / 10;
-		specBar.update(spec, 100);
 
 		// API status
 		GameStateServer server = plugin.getApiServer();
 		if (server != null)
 		{
-			apiStatusLabel.setText("Running on port " + config.apiPort());
-			apiStatusLabel.setForeground(new Color(76, 175, 80));
-			sseClientsLabel.setText(String.valueOf(server.getSseClientCount()));
-		}
-		else
-		{
-			apiStatusLabel.setText("Stopped");
-			apiStatusLabel.setForeground(new Color(244, 67, 54));
-			sseClientsLabel.setText("0");
-		}
+			apiStatus.setText("Running · :" + config.apiPort());
+			apiStatus.setForeground(PanelUtils.GREEN);
+			sseClients.setText(String.valueOf(server.getSseClientCount()));
+			recordingVal.setText(server.isRecording() ? "Recording" : "Off");
+			recordingVal.setForeground(server.isRecording() ? PanelUtils.RED : PanelUtils.MUTED);
 
-		// Session summary
-		if (server != null)
-		{
 			long sessionMs = server.getSessionStartMs();
 			if (sessionMs > 0)
 			{
 				long elapsed = System.currentTimeMillis() - sessionMs;
-				long mins = elapsed / 60000;
-				long secs = (elapsed / 1000) % 60;
-				sessionTimeLabel.setText(String.format("%dm %ds", mins, secs));
+				long h = elapsed / 3_600_000;
+				long m = (elapsed / 60_000) % 60;
+				long s = (elapsed / 1000) % 60;
+				uptimeVal.setText(String.format("%02d:%02d:%02d", h, m, s));
 			}
 			else
 			{
-				sessionTimeLabel.setText("—");
+				uptimeVal.setText("—");
 			}
 
 			int totalXp = server.getTotalXpGained(client);
-			totalXpLabel.setText(String.format("%,d", totalXp));
+			xpSessionVal.setText("+" + String.format("%,d", totalXp));
+		}
+		else
+		{
+			apiStatus.setText("Stopped");
+			apiStatus.setForeground(PanelUtils.RED);
+			sseClients.setText("0");
+			recordingVal.setText("Off");
+			recordingVal.setForeground(PanelUtils.MUTED);
+			uptimeVal.setText("—");
+			xpSessionVal.setText("—");
 		}
 
+		// Tick buffer + action buffer
 		TickStateBuffer tb = plugin.getTickBuffer();
-		if (tb != null)
+		tickBufVal.setText(tb != null ? tb.filled() + " / " + tb.capacity() : "—");
+		ActionTracker at = plugin.getActionTracker();
+		actionBufVal.setText(at != null ? at.filled() + " / " + at.capacity() : "—");
+
+		// Recent actions (bottom card)
+		refreshRecentActions();
+
+		// Skill deltas (bottom card)
+		refreshSkillDeltas();
+
+		// Save status (bottom card)
+		refreshSaveInfo();
+	}
+
+	private void refreshRecentActions()
+	{
+		recentActionsContent.removeAll();
+		ActionTracker tracker = plugin.getActionTracker();
+		if (tracker == null)
 		{
-			tickBufferLabel.setText(tb.filled() + " / " + tb.capacity());
+			recentActionsContent.add(mutedLabel("No data"));
+			recentActionsContent.revalidate();
+			recentActionsContent.repaint();
+			return;
 		}
 
-		if (plugin.getActionTracker() != null)
+		java.util.List<ActionTracker.TrackedAction> actions = tracker.getActions(4, null, null);
+		for (int i = actions.size() - 1; i >= 0; i--)
 		{
-			actionBufferLabel.setText(plugin.getActionTracker().filled() + " / " + plugin.getActionTracker().capacity());
+			ActionTracker.TrackedAction a = actions.get(i);
+			JPanel row = new JPanel(new BorderLayout(px(12), 0));
+			row.setOpaque(false);
+			row.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(18)));
+			row.setAlignmentX(LEFT_ALIGNMENT);
+
+			JLabel tick = new JLabel(String.valueOf(a.tick));
+			tick.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			tick.setFont(tick.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
+			tick.setPreferredSize(new Dimension(px(36), px(16)));
+			row.add(tick, BorderLayout.WEST);
+
+			JLabel desc = new JLabel(a.action + " · " + a.target);
+			desc.setForeground(Color.WHITE);
+			desc.setFont(desc.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
+			row.add(desc, BorderLayout.CENTER);
+
+			recentActionsContent.add(row);
+		}
+		if (actions.isEmpty())
+		{
+			recentActionsContent.add(mutedLabel("No actions yet"));
+		}
+		recentActionsContent.revalidate();
+		recentActionsContent.repaint();
+	}
+
+	private void refreshSkillDeltas()
+	{
+		skillDeltasContent.removeAll();
+		GameStateServer server = plugin.getApiServer();
+		if (server == null || client.getGameState() != GameState.LOGGED_IN)
+		{
+			skillDeltasContent.add(mutedLabel("No data"));
+			skillDeltasContent.revalidate();
+			skillDeltasContent.repaint();
+			return;
+		}
+
+		java.util.Map<String, Integer> baselines = server.getXpBaselinesCopy();
+		int shown = 0;
+		for (Skill skill : Skill.values())
+		{
+			if (skill == Skill.OVERALL || shown >= 5) continue;
+			Integer baseline = baselines.get(skill.name());
+			if (baseline == null) continue;
+			int gained = client.getSkillExperience(skill) - baseline;
+			if (gained <= 0) continue;
+
+			JPanel row = new JPanel(new BorderLayout(px(12), 0));
+			row.setOpaque(false);
+			row.setMaximumSize(new Dimension(Integer.MAX_VALUE, px(18)));
+			row.setAlignmentX(LEFT_ALIGNMENT);
+
+			JLabel name = new JLabel(capitalize(skill.name()));
+			name.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			name.setFont(name.getFont().deriveFont(Font.PLAIN, fontSize(12f)));
+			row.add(name, BorderLayout.WEST);
+
+			JLabel xp = new JLabel("+" + String.format("%,d", gained));
+			xp.setForeground(PanelUtils.GREEN);
+			xp.setFont(xp.getFont().deriveFont(Font.PLAIN, fontSize(12f)));
+			xp.setHorizontalAlignment(SwingConstants.RIGHT);
+			row.add(xp, BorderLayout.EAST);
+
+			skillDeltasContent.add(row);
+			shown++;
+		}
+		if (shown == 0)
+		{
+			skillDeltasContent.add(mutedLabel("No XP gained yet"));
+		}
+		skillDeltasContent.revalidate();
+		skillDeltasContent.repaint();
+	}
+
+	private void refreshSaveInfo()
+	{
+		GameStateServer server = plugin.getApiServer();
+		if (server != null)
+		{
+			saveStatus.setText("OK");
+			saveStatus.setForeground(PanelUtils.GREEN);
+			savePath.setText("~/.runelite/osrs-companion/");
+			savePath.setFont(savePath.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
+		}
+		else
+		{
+			saveStatus.setText("—");
+			saveStatus.setForeground(PanelUtils.MUTED);
 		}
 	}
 
+	// ── Actions ─────────────────────────────────────────────────────
 	private void copyDebugSnapshot()
 	{
 		GameStateServer server = plugin.getApiServer();
@@ -227,19 +406,15 @@ public class DashboardPanel extends JPanel
 			JOptionPane.showMessageDialog(this, "API server not running", "Error", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		// Copy a quick status summary to clipboard
 		StringBuilder sb = new StringBuilder();
 		sb.append("=== OSRS MCP Debug Snapshot ===\n");
 		sb.append("Time: ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date())).append("\n");
-		sb.append("Player: ").append(playerNameLabel.getText()).append("\n");
-		sb.append("World: ").append(worldLabel.getText()).append("\n");
-		sb.append("Position: ").append(positionLabel.getText()).append("\n");
-		sb.append("HP: ").append(hpBar.getText()).append("\n");
-		sb.append("Prayer: ").append(prayerBar.getText()).append("\n");
-		sb.append("Run: ").append(runBar.getText()).append("\n");
-		sb.append("Spec: ").append(specBar.getText()).append("\n");
-		sb.append("Tick Buffer: ").append(tickBufferLabel.getText()).append("\n");
-		sb.append("Actions: ").append(actionBufferLabel.getText()).append("\n");
+		sb.append("Player: ").append(playerName.getText()).append("\n");
+		sb.append("World: ").append(worldVal.getText()).append("\n");
+		sb.append("Position: ").append(positionVal.getText()).append("\n");
+		sb.append("API: ").append(apiStatus.getText()).append("\n");
+		sb.append("Tick Buffer: ").append(tickBufVal.getText()).append("\n");
+		sb.append("Actions: ").append(actionBufVal.getText()).append("\n");
 
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
 			new StringSelection(sb.toString()), null);
@@ -254,123 +429,22 @@ public class DashboardPanel extends JPanel
 			JOptionPane.showMessageDialog(this, "API server not running", "Error", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		// Trigger screenshot via the server's existing mechanism
 		server.takeScreenshotToFile();
 	}
 
-	// === UI Helpers ===
-
-	private static JLabel styledLabel(String text)
+	// ── Helpers ─────────────────────────────────────────────────────
+	private static String capitalize(String s)
 	{
-		JLabel label = new JLabel(text);
-		label.setForeground(Color.WHITE);
-		label.setFont(label.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
-		return label;
+		if (s == null || s.isEmpty()) return s;
+		return s.substring(0, 1).toUpperCase() + s.substring(1).toLowerCase();
 	}
 
-	private static JPanel labelRow(String labelText, JLabel valueLabel)
+	private static JLabel mutedLabel(String text)
 	{
-		JPanel row = new JPanel(new BorderLayout());
-		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		row.setMaximumSize(dim(600, 18));
-
-		JLabel keyLabel = new JLabel(labelText);
-		keyLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		keyLabel.setFont(keyLabel.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
-		row.add(keyLabel, BorderLayout.WEST);
-		row.add(valueLabel, BorderLayout.EAST);
-		return row;
-	}
-
-	private static JPanel sectionHeader(String title)
-	{
-		JPanel header = new JPanel(new BorderLayout());
-		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setMaximumSize(dim(600, 22));
-		header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
-
-		JLabel label = new JLabel(title);
-		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(label.getFont().deriveFont(Font.BOLD, fontSize(11f)));
-		header.add(label, BorderLayout.WEST);
-
-		return header;
-	}
-
-	private static JButton actionButton(String text)
-	{
-		JButton btn = new JButton(text);
-		btn.setFont(btn.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-		btn.setFocusPainted(false);
-		btn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		btn.setForeground(Color.WHITE);
-		btn.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1),
-			new EmptyBorder(px(3), px(6), px(3), px(6))
-		));
-		btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		return btn;
-	}
-
-	/**
-	 * A simple colored progress bar with label.
-	 */
-	private static class StatusBar extends JPanel
-	{
-		private final Color barColor;
-		private final String prefix;
-		private int current;
-		private int max;
-		private final JLabel textLabel;
-
-		StatusBar(Color barColor, String prefix)
-		{
-			this.barColor = barColor;
-			this.prefix = prefix;
-			this.current = 0;
-			this.max = 1;
-
-			setLayout(new BorderLayout());
-			setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			setMaximumSize(dim(600, 16));
-			setPreferredSize(new Dimension(0, px(16)));
-
-			textLabel = new JLabel(prefix + ": 0/0");
-			textLabel.setForeground(Color.WHITE);
-			textLabel.setFont(textLabel.getFont().deriveFont(Font.PLAIN, fontSize(10f)));
-			textLabel.setHorizontalAlignment(SwingConstants.CENTER);
-			add(textLabel, BorderLayout.CENTER);
-		}
-
-		void update(int current, int max)
-		{
-			this.current = current;
-			this.max = Math.max(max, 1);
-			textLabel.setText(prefix + ": " + current + "/" + max);
-			repaint();
-		}
-
-		String getText()
-		{
-			return current + "/" + max;
-		}
-
-		@Override
-		protected void paintComponent(Graphics g)
-		{
-			super.paintComponent(g);
-			int w = getWidth();
-			int h = getHeight();
-
-			// Background
-			g.setColor(ColorScheme.DARKER_GRAY_COLOR);
-			g.fillRect(0, 0, w, h);
-
-			// Bar fill
-			float pct = Math.min(1f, (float) current / max);
-			int barWidth = (int) (w * pct);
-			g.setColor(barColor);
-			g.fillRect(0, 0, barWidth, h);
-		}
+		JLabel l = new JLabel(text);
+		l.setForeground(PanelUtils.MUTED);
+		l.setFont(l.getFont().deriveFont(Font.PLAIN, fontSize(11f)));
+		l.setAlignmentX(LEFT_ALIGNMENT);
+		return l;
 	}
 }

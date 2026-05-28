@@ -24,6 +24,7 @@ import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
@@ -64,8 +65,8 @@ import static com.osrscompanion.UiScale.*;
  */
 public class OsrsCompanionFrame extends JFrame
 {
-	private static final Dimension DEFAULT_SIZE = dim(1100, 720);
-	private static final Dimension MIN_SIZE = dim(880, 560);
+	private static final Dimension DEFAULT_SIZE = dim(1280, 820);
+	private static final Dimension MIN_SIZE = dim(960, 600);
 
 	// Tab identifiers — order = display order in the nav rail.
 	private static final String TAB_DASHBOARD = "Dashboard";
@@ -170,8 +171,35 @@ public class OsrsCompanionFrame extends JFrame
 		tabPanels.put(TAB_VARS,      varHistoryPanel);
 		tabPanels.put(TAB_BUFFER,    tickBufferPanel);
 
-		// Assemble shell.
-		JPanel root = new JPanel(new BorderLayout());
+		// Assemble shell — override paint() to apply system text anti-aliasing
+		// to the entire component tree. Without this, JLabel text is aliased
+		// because Swing doesn't inherit the OS font smoothing settings by default.
+		@SuppressWarnings("unchecked")
+		final Map<RenderingHints.Key, Object> desktopHints =
+			(Map<RenderingHints.Key, Object>) java.awt.Toolkit.getDefaultToolkit()
+				.getDesktopProperty("awt.font.desktophints");
+
+		JPanel root = new JPanel(new BorderLayout())
+		{
+			@Override
+			public void paint(Graphics g)
+			{
+				if (g instanceof Graphics2D)
+				{
+					Graphics2D g2 = (Graphics2D) g;
+					if (desktopHints != null)
+					{
+						g2.addRenderingHints(desktopHints);
+					}
+					else
+					{
+						g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+							RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+					}
+				}
+				super.paint(g);
+			}
+		};
 		root.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		root.add(buildHeader(),  BorderLayout.NORTH);
 		root.add(buildNavRail(), BorderLayout.WEST);
@@ -341,7 +369,14 @@ public class OsrsCompanionFrame extends JFrame
 		cardHost.setBorder(new EmptyBorder(0, 0, 0, 0));
 		for (Map.Entry<String, JPanel> e : tabPanels.entrySet())
 		{
-			cardHost.add(e.getValue(), e.getKey());
+			JScrollPane scroll = new JScrollPane(e.getValue(),
+				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+				JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+			scroll.setBorder(new EmptyBorder(0, 0, 0, 0));
+			scroll.getViewport().setBackground(ColorScheme.DARK_GRAY_COLOR);
+			scroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
+			scroll.getVerticalScrollBar().setUnitIncrement(px(16));
+			cardHost.add(scroll, e.getKey());
 		}
 		return cardHost;
 	}

@@ -42,13 +42,13 @@ public interface OsrsCompanionConfig extends Config
 	@ConfigItem(
 		keyName = "guiScale",
 		name = "GUI Scale",
-		description = "Scale factor for the standalone GUI window. 0 = auto-detect from screen resolution. Try 1.25 or 1.5 if text is too small.",
+		description = "Scale factor for the standalone GUI window. 1.0 = native (recommended). Try 1.25 or 1.5 only if everything looks tiny.",
 		section = apiSection,
 		position = 2
 	)
 	default double guiScale()
 	{
-		return 0;
+		return 1.0;
 	}
 
 	@ConfigSection(

@@ -116,7 +116,7 @@ export function registerDebugTools(server: McpServer) {
 
   server.tool(
     "get_recording",
-    "Get recorded game events from a recording session. Use this after stop_recording or when recording auto-completes. Returns a timeline of all game events captured during the session. Use this to analyze what went wrong over time — find where the bot got stuck, missed an NPC, or failed a mechanic. Filter by event types or tick range to focus on specific moments.",
+    "Get recorded game events from a recording session. Use this after stop_recording or when recording auto-completes. Returns a tick-grouped timeline of all game events captured during the session. Use this to analyze what went wrong over time — find where the bot got stuck, missed an NPC, or failed a mechanic. Filter by event types or tick range to focus on specific moments.",
     {
       types: z
         .string()
@@ -147,8 +147,8 @@ export function registerDebugTools(server: McpServer) {
         const query = params.length ? `?${params.join("&")}` : "";
         const data = await apiGet(`/api/recording/data${query}`);
 
-        const events = data.events || [];
-        if (events.length === 0) {
+        const ticks = data.ticks || [];
+        if (ticks.length === 0) {
           return {
             content: [
               {
@@ -161,177 +161,183 @@ export function registerDebugTools(server: McpServer) {
           };
         }
 
+        const meta = data.meta || {};
         const lines = [
           `# Recording Data — ${data.filteredEvents} of ${data.totalEvents} events${data.recording ? " (still recording)" : ""}`,
           "",
         ];
 
-        // Group events by type for a summary header
-        const typeCounts: Record<string, number> = {};
-        for (const e of events) {
-          typeCounts[e.eventType] = (typeCounts[e.eventType] || 0) + 1;
+        // Summary from meta
+        if (meta.eventCounts) {
+          lines.push(
+            "## Event Summary",
+            ...Object.entries(meta.eventCounts as Record<string, number>).map(
+              ([t, c]) => `  ${t}: ${c}`
+            ),
+            ""
+          );
         }
-        lines.push(
-          "## Event Summary",
-          ...Object.entries(typeCounts).map(
-            ([t, c]) => `  ${t}: ${c}`
-          ),
-          ""
-        );
 
-        // Timeline
+        // Tick-grouped timeline
         lines.push("## Timeline");
-        for (const e of events) {
-          const tick = e.ticksElapsed ?? e.tick;
-          const type = e.eventType;
+        const startTick = meta.startTick ?? ticks[0]?.tick ?? 0;
+        for (const t of ticks) {
+          const elapsed = t.tick - startTick;
 
-          switch (type) {
-            case "game_tick": {
-              const p = e.player;
-              const prayers = p?.activePrayers?.length
-                ? ` prayers=[${p.activePrayers.join(",")}]`
-                : "";
-              const interacting = p?.interacting
-                ? ` → ${p.interacting.name}`
-                : "";
-              const npcCount = e.nearbyNpcs?.length ?? 0;
-              lines.push(
-                `  [+${tick}] TICK — HP:${p?.health} Pray:${p?.prayer} Pos:(${p?.position?.x},${p?.position?.y}) Anim:${p?.animation}${prayers}${interacting} idle=${p?.isIdle} npcs=${npcCount}`
-              );
-              break;
+          // Player snapshot (promoted from game_tick)
+          if (t.player) {
+            const p = t.player;
+            const prayers = p?.activePrayers?.length
+              ? ` prayers=[${p.activePrayers.join(",")}]`
+              : "";
+            const interacting = p?.interacting
+              ? ` → ${p.interacting.name}`
+              : "";
+            const npcCount = t.nearbyNpcs?.length ?? 0;
+            lines.push(
+              `  [+${elapsed}] TICK — HP:${p?.health} Pray:${p?.prayer} Pos:(${p?.position?.x},${p?.position?.y}) Anim:${p?.animation}${prayers}${interacting} idle=${p?.isIdle} npcs=${npcCount}`
+            );
+          }
+
+          // Events within this tick
+          const events = t.events || [];
+          for (const e of events) {
+            const type = e.type;
+
+            switch (type) {
+              case "hitsplat": {
+                const target = e.target?.name || "?";
+                const mine = e.isMine ? " (mine)" : "";
+                lines.push(
+                  `  [+${elapsed}] HIT — ${target} ${e.amount} dmg (type ${e.hitsplatType})${mine}`
+                );
+                break;
+              }
+              case "animation_changed": {
+                const actor = e.actor?.name || "?";
+                lines.push(
+                  `  [+${elapsed}] ANIM — ${actor} → ${e.animation}`
+                );
+                break;
+              }
+              case "npc_spawned": {
+                const npc = e.npc;
+                lines.push(
+                  `  [+${elapsed}] NPC+ — ${npc?.name} (id:${npc?.id}) at (${npc?.position?.x},${npc?.position?.y})`
+                );
+                break;
+              }
+              case "npc_despawned": {
+                const npc = e.npc;
+                lines.push(
+                  `  [+${elapsed}] NPC- — ${npc?.name} (id:${npc?.id})`
+                );
+                break;
+              }
+              case "actor_death": {
+                lines.push(
+                  `  [+${elapsed}] DEATH — ${e.actor?.name || "?"}`
+                );
+                break;
+              }
+              case "var_changed": {
+                lines.push(
+                  `  [+${elapsed}] VAR — varp[${e.varpIndex}] ${e.oldValue} → ${e.newValue}`
+                );
+                break;
+              }
+              case "menu_clicked": {
+                lines.push(
+                  `  [+${elapsed}] CLICK — ${e.option} → ${e.target} [${e.menuAction}]`
+                );
+                break;
+              }
+              case "stat_changed": {
+                lines.push(
+                  `  [+${elapsed}] STAT — ${e.skill} lvl ${e.level} (boosted: ${e.boostedLevel}) xp: ${e.xp}`
+                );
+                break;
+              }
+              case "item_changed": {
+                lines.push(
+                  `  [+${elapsed}] ITEMS — ${e.container} changed`
+                );
+                break;
+              }
+              case "interacting_changed": {
+                const src = e.source?.name || "?";
+                const tgt = e.target?.name || "nothing";
+                lines.push(
+                  `  [+${elapsed}] TARGET — ${src} → ${tgt}`
+                );
+                break;
+              }
+              case "object_spawned": {
+                const pos = e.position;
+                lines.push(
+                  `  [+${elapsed}] OBJ+ — ${e.objectName || "?"} (id:${e.objectId}) at (${pos?.x},${pos?.y}) size:${e.sizeX}x${e.sizeY}`
+                );
+                break;
+              }
+              case "object_despawned": {
+                const pos = e.position;
+                lines.push(
+                  `  [+${elapsed}] OBJ- — ${e.objectName || "?"} (id:${e.objectId}) at (${pos?.x},${pos?.y})`
+                );
+                break;
+              }
+              case "projectile_spawned": {
+                const tgt = e.targetActor
+                  ? `→ ${e.targetActor.name}`
+                  : e.targetPoint
+                    ? `→ tile (${e.targetPoint.x},${e.targetPoint.y})`
+                    : "";
+                lines.push(
+                  `  [+${elapsed}] PROJ — id:${e.projectileId} ${tgt} cycles:${e.remainingCycles} remaining`
+                );
+                break;
+              }
+              case "gfx_created": {
+                const pos = e.position;
+                lines.push(
+                  `  [+${elapsed}] GFX+ — id:${e.graphicsId} at (${pos?.worldX},${pos?.worldY})`
+                );
+                break;
+              }
+              case "chat_message": {
+                const sender = e.sender ? `${e.sender}: ` : "";
+                lines.push(
+                  `  [+${elapsed}] CHAT — [${e.messageType}] ${sender}${e.message}`
+                );
+                break;
+              }
+              case "sound_effect": {
+                const src = e.source === "AREA" ? ` at scene(${e.sceneX},${e.sceneY})` : "";
+                lines.push(
+                  `  [+${elapsed}] SFX — id:${e.soundId} (${e.source})${src}`
+                );
+                break;
+              }
+              case "loot_received": {
+                const itemList = (e.items || [])
+                  .map((i: any) => `${i.quantity}x ${i.name || i.itemId}`)
+                  .join(", ");
+                lines.push(
+                  `  [+${elapsed}] LOOT — ${e.npcName} dropped: ${itemList}`
+                );
+                break;
+              }
+              case "game_state_changed": {
+                lines.push(
+                  `  [+${elapsed}] STATE — ${e.state}`
+                );
+                break;
+              }
+              default:
+                lines.push(
+                  `  [+${elapsed}] ${type} — ${JSON.stringify(e).substring(0, 120)}`
+                );
             }
-            case "hitsplat": {
-              const target = e.target?.name || "?";
-              const mine = e.isMine ? " (mine)" : "";
-              lines.push(
-                `  [+${tick}] HIT — ${target} ${e.amount} dmg (type ${e.type})${mine}`
-              );
-              break;
-            }
-            case "animation_changed": {
-              const actor = e.actor?.name || "?";
-              lines.push(
-                `  [+${tick}] ANIM — ${actor} → ${e.animation}`
-              );
-              break;
-            }
-            case "npc_spawned": {
-              const npc = e.npc;
-              lines.push(
-                `  [+${tick}] NPC+ — ${npc?.name} (id:${npc?.id}) at (${npc?.position?.x},${npc?.position?.y})`
-              );
-              break;
-            }
-            case "npc_despawned": {
-              const npc = e.npc;
-              lines.push(
-                `  [+${tick}] NPC- — ${npc?.name} (id:${npc?.id})`
-              );
-              break;
-            }
-            case "actor_death": {
-              lines.push(
-                `  [+${tick}] DEATH — ${e.actor?.name || "?"}`
-              );
-              break;
-            }
-            case "var_changed": {
-              lines.push(
-                `  [+${tick}] VAR — varp[${e.varpIndex}] ${e.oldValue} → ${e.newValue}`
-              );
-              break;
-            }
-            case "menu_clicked": {
-              lines.push(
-                `  [+${tick}] CLICK — ${e.option} → ${e.target} [${e.menuAction}]`
-              );
-              break;
-            }
-            case "stat_changed": {
-              lines.push(
-                `  [+${tick}] STAT — ${e.skill} lvl ${e.level} (boosted: ${e.boostedLevel}) xp: ${e.xp}`
-              );
-              break;
-            }
-            case "item_changed": {
-              lines.push(
-                `  [+${tick}] ITEMS — ${e.container} changed`
-              );
-              break;
-            }
-            case "interacting_changed": {
-              const src = e.source?.name || "?";
-              const tgt = e.target?.name || "nothing";
-              lines.push(
-                `  [+${tick}] TARGET — ${src} → ${tgt}`
-              );
-              break;
-            }
-            case "object_spawned": {
-              const pos = e.position;
-              lines.push(
-                `  [+${tick}] OBJ+ — ${e.objectName || "?"} (id:${e.objectId}) at (${pos?.x},${pos?.y}) size:${e.sizeX}x${e.sizeY}`
-              );
-              break;
-            }
-            case "object_despawned": {
-              const pos = e.position;
-              lines.push(
-                `  [+${tick}] OBJ- — ${e.objectName || "?"} (id:${e.objectId}) at (${pos?.x},${pos?.y})`
-              );
-              break;
-            }
-            case "projectile_spawned": {
-              const tgt = e.targetActor
-                ? `→ ${e.targetActor.name}`
-                : e.targetPoint
-                  ? `→ tile (${e.targetPoint.x},${e.targetPoint.y})`
-                  : "";
-              lines.push(
-                `  [+${tick}] PROJ — id:${e.projectileId} ${tgt} cycles:${e.remainingCycles} remaining`
-              );
-              break;
-            }
-            case "gfx_created": {
-              const pos = e.position;
-              lines.push(
-                `  [+${tick}] GFX+ — id:${e.graphicsId} at (${pos?.worldX},${pos?.worldY})`
-              );
-              break;
-            }
-            case "chat_message": {
-              const sender = e.sender ? `${e.sender}: ` : "";
-              lines.push(
-                `  [+${tick}] CHAT — [${e.type}] ${sender}${e.message}`
-              );
-              break;
-            }
-            case "sound_effect": {
-              const src = e.source === "AREA" ? ` at scene(${e.sceneX},${e.sceneY})` : "";
-              lines.push(
-                `  [+${tick}] SFX — id:${e.soundId} (${e.source})${src}`
-              );
-              break;
-            }
-            case "loot_received": {
-              const itemList = (e.items || [])
-                .map((i: any) => `${i.quantity}x ${i.name || i.itemId}`)
-                .join(", ");
-              lines.push(
-                `  [+${tick}] LOOT — ${e.npcName} dropped: ${itemList}`
-              );
-              break;
-            }
-            case "game_state_changed": {
-              lines.push(
-                `  [+${tick}] STATE — ${e.state}`
-              );
-              break;
-            }
-            default:
-              lines.push(
-                `  [+${tick}] ${type} — ${JSON.stringify(e).substring(0, 120)}`
-              );
           }
         }
 

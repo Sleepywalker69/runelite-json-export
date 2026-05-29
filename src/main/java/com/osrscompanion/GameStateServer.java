@@ -3862,10 +3862,117 @@ public class GameStateServer
 
 		Map<String, Object> response = new LinkedHashMap<>();
 		response.put("recording", isRecording);
+		response.put("format", 2);
+
+		Map<String, Object> grouped = buildTickGroupedRecording(result);
+		response.put("meta", grouped.get("meta"));
+		response.put("ticks", grouped.get("ticks"));
 		response.put("totalEvents", recordingBuffer.size());
 		response.put("filteredEvents", result.size());
-		response.put("events", result);
 		sendJson(exchange, 200, response);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> buildTickGroupedRecording(List<Map<String, Object>> flatEvents)
+	{
+		Map<String, Object> root = new LinkedHashMap<>();
+
+		// Meta
+		Map<String, Object> meta = new LinkedHashMap<>();
+		if (!flatEvents.isEmpty())
+		{
+			Map<String, Object> first = flatEvents.get(0);
+			Map<String, Object> last = flatEvents.get(flatEvents.size() - 1);
+			meta.put("startTick", first.get("tick"));
+			meta.put("endTick", last.get("tick"));
+			meta.put("startTime", first.get("timestamp"));
+			meta.put("endTime", last.get("timestamp"));
+			Object startTick = first.get("tick");
+			Object endTick = last.get("tick");
+			if (startTick instanceof Number && endTick instanceof Number)
+			{
+				meta.put("durationTicks", ((Number) endTick).intValue() - ((Number) startTick).intValue());
+			}
+		}
+		meta.put("totalEvents", flatEvents.size());
+
+		// Event counts
+		Map<String, Integer> eventCounts = new LinkedHashMap<>();
+		for (Map<String, Object> evt : flatEvents)
+		{
+			String type = String.valueOf(evt.get("eventType"));
+			eventCounts.merge(type, 1, Integer::sum);
+		}
+		meta.put("eventCounts", eventCounts);
+		root.put("meta", meta);
+
+		// Group events by tick
+		Map<Integer, List<Map<String, Object>>> byTick = new LinkedHashMap<>();
+		for (Map<String, Object> evt : flatEvents)
+		{
+			Object tickObj = evt.get("tick");
+			int tick = tickObj instanceof Number ? ((Number) tickObj).intValue() : 0;
+			byTick.computeIfAbsent(tick, k -> new ArrayList<>()).add(evt);
+		}
+
+		List<Map<String, Object>> ticks = new ArrayList<>();
+		for (Map.Entry<Integer, List<Map<String, Object>>> entry : byTick.entrySet())
+		{
+			int tickNum = entry.getKey();
+			List<Map<String, Object>> tickEvents = entry.getValue();
+
+			Map<String, Object> tickObj = new LinkedHashMap<>();
+			tickObj.put("tick", tickNum);
+
+			// Find timestamp from any event in this tick
+			for (Map<String, Object> evt : tickEvents)
+			{
+				if (evt.containsKey("timestamp"))
+				{
+					tickObj.put("ts", evt.get("timestamp"));
+					break;
+				}
+			}
+
+			// Promote game_tick data to tick level
+			List<Map<String, Object>> nonTickEvents = new ArrayList<>();
+			for (Map<String, Object> evt : tickEvents)
+			{
+				if ("game_tick".equals(evt.get("eventType")))
+				{
+					if (evt.containsKey("fps")) tickObj.put("fps", evt.get("fps"));
+					if (evt.containsKey("player")) tickObj.put("player", evt.get("player"));
+					if (evt.containsKey("nearbyNpcs")) tickObj.put("nearbyNpcs", evt.get("nearbyNpcs"));
+				}
+				else
+				{
+					// Strip common fields that are already on the tick wrapper
+					Map<String, Object> slim = new LinkedHashMap<>();
+					slim.put("type", evt.get("eventType"));
+					for (Map.Entry<String, Object> field : evt.entrySet())
+					{
+						String key = field.getKey();
+						if ("eventType".equals(key) || "tick".equals(key)
+							|| "ticksElapsed".equals(key) || "timestamp".equals(key))
+						{
+							continue;
+						}
+						slim.put(key, field.getValue());
+					}
+					nonTickEvents.add(slim);
+				}
+			}
+
+			if (!nonTickEvents.isEmpty())
+			{
+				tickObj.put("events", nonTickEvents);
+			}
+
+			ticks.add(tickObj);
+		}
+
+		root.put("ticks", ticks);
+		return root;
 	}
 
 	/**
@@ -4083,7 +4190,7 @@ public class GameStateServer
 	}
 
 	/**
-	 * Export the current recording buffer to a gzipped JSON file.
+	 * Export the current recording buffer to a gzipped JSON file (format v2: tick-grouped).
 	 */
 	public java.io.File exportRecordingToFile()
 	{
@@ -4094,6 +4201,12 @@ public class GameStateServer
 		}
 		if (snapshot.isEmpty()) return null;
 
+		Map<String, Object> export = new LinkedHashMap<>();
+		export.put("format", 2);
+		Map<String, Object> grouped = buildTickGroupedRecording(snapshot);
+		export.put("meta", grouped.get("meta"));
+		export.put("ticks", grouped.get("ticks"));
+
 		java.io.File dir = new java.io.File(System.getProperty("user.home"), ".runelite/osrs-companion/recordings");
 		dir.mkdirs();
 		String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
@@ -4102,7 +4215,7 @@ public class GameStateServer
 		try (java.util.zip.GZIPOutputStream gzOut = new java.util.zip.GZIPOutputStream(new java.io.FileOutputStream(file));
 			 java.io.OutputStreamWriter writer = new java.io.OutputStreamWriter(gzOut, java.nio.charset.StandardCharsets.UTF_8))
 		{
-			compactGson.toJson(snapshot, writer);
+			compactGson.toJson(export, writer);
 		}
 		catch (Exception e)
 		{

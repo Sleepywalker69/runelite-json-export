@@ -492,7 +492,7 @@ public class OsrsCompanionPlugin extends Plugin
 				Map<String, Object> data = new LinkedHashMap<>();
 				data.put("tick", client.getTickCount());
 				data.put("timestamp", System.currentTimeMillis());
-				data.put("type", event.getType().name());
+				data.put("messageType", event.getType().name());
 				data.put("sender", event.getName());
 				data.put("message", event.getMessage());
 
@@ -822,7 +822,7 @@ public class OsrsCompanionPlugin extends Plugin
 		data.put("timestamp", System.currentTimeMillis());
 		data.put("target", serializeActorBrief(target));
 		data.put("amount", hitsplat.getAmount());
-		data.put("type", hitsplat.getHitsplatType());
+		data.put("hitsplatType", hitsplat.getHitsplatType());
 		data.put("isMine", hitsplat.isMine());
 		data.put("isOthers", hitsplat.isOthers());
 		data.put("disappearsOnGameCycle", hitsplat.getDisappearsOnGameCycle());

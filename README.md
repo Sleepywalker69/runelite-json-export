@@ -86,7 +86,7 @@ The MCP server provides tools across eight categories:
 | `start_recording` | Start recording game events for a duration (default 3 min, max 10 min). Filter by event type to keep the buffer focused |
 | `stop_recording` | Stop an active recording early |
 | `recording_status` | Check recording progress — events captured, time remaining, active filter |
-| `get_recording` | Retrieve recorded timeline with filtering by event type and tick range |
+| `get_recording` | Retrieve recorded timeline (tick-grouped format v2) with filtering by event type and tick range |
 | `buffer` | **Tick-level state history** with delta encoding — query what changed in the last N ticks. Stores ~10 min of per-tick snapshots. Supports filtering by entity type, name, and ID |
 | `screenshot` | Capture the game viewport as a PNG image |
 | `runelite_logs` | Read RuneLite console/plugin logs — filter by level, logger name, or search text |
@@ -317,7 +317,7 @@ Click the **Open GUI** button in the RuneLite sidebar to launch a standalone 110
 | Tab | What it shows |
 |-----|--------------|
 | **Dashboard** | Two-column layout: player status bars (HP, prayer, run, spec) on the left; API server status, session summary, and quick action buttons (Save, Snapshot, Screenshot) on the right |
-| **Record** | Start/stop event recording with duration and event type selection. Includes presets (Boss, Combat, Lite, Vars, Clicks), a live progress bar, and a **recorded events viewer** with Load Events and Copy All buttons. Recordings auto-save to gzipped JSON on stop — click **Reveal file** to open the recordings folder |
+| **Record** | Start/stop event recording with duration and event type selection. Includes presets (Boss, Combat, Lite, Vars, Clicks), a live progress bar, and a **recorded events viewer** with Load Events and Copy All buttons. Recordings auto-save to gzipped JSON (tick-grouped format v2) on stop — click **Reveal file** to open the recordings folder |
 | **Actions** | Live feed of the ActionTracker — menu clicks, CS2 script callbacks, and inferred state changes. Filterable by source and searchable. Copy button for clipboard export |
 | **Chat** | Real-time chat viewer with type filtering (Game, Public, Private, Clan) and search. Color-coded by chat type. Copy button for clipboard export |
 | **Logs** | RuneLite console log viewer with level filtering (ERROR/WARN/INFO/DEBUG) and search. Stack traces on hover |
@@ -342,10 +342,42 @@ Player snapshots are saved periodically to:
 ~/.runelite/osrs-companion/{username}.json
 ```
 
-Event recordings are auto-saved as gzipped JSON when stopped:
+Event recordings are auto-saved as gzipped JSON (format v2: tick-grouped) when stopped:
 ```
 ~/.runelite/osrs-companion/recordings/recording_{timestamp}.json.gz
 ```
+
+### Recording Format v2
+
+Recordings use a tick-grouped format that organizes events chronologically by game tick. This reduces token usage by ~30% compared to flat event arrays while preserving all data.
+
+```json
+{
+  "format": 2,
+  "meta": {
+    "startTick": 83, "endTick": 212,
+    "durationTicks": 129, "totalEvents": 4120,
+    "eventCounts": { "hitsplat": 157, "game_tick": 39, ... }
+  },
+  "ticks": [
+    {
+      "tick": 85, "ts": 1780088760830,
+      "fps": 50,
+      "player": { "position": {"x":3427,"y":3541,"plane":2}, "health": 99, "prayer": 12, ... },
+      "nearbyNpcs": [ ... ],
+      "events": [
+        {"type": "hitsplat", "target": {"name":"Gargoyle"}, "amount": 6, "hitsplatType": 17, ...},
+        {"type": "animation_changed", "actor": {"name":"Gargoyle"}, "animation": 1517}
+      ]
+    }
+  ]
+}
+```
+
+- **`game_tick`** data (player snapshot, FPS, nearby NPCs) is promoted to tick-level fields
+- **`tick`, `timestamp`, `ticksElapsed`** are not repeated on every event — they live on the tick wrapper
+- **`eventType`** is shortened to **`type`** on each event
+- All original event fields are preserved with no data loss
 
 ## Privacy
 
